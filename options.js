@@ -886,20 +886,29 @@ document.addEventListener('DOMContentLoaded', () => {
             throw new Error(trKey('dropboxOauthUnsupported', 'Браузер не поддерживает Dropbox OAuth (ни API расширения, ни popup flow).'));
         }
         const appKey = getConfiguredDropboxAppKey();
-        if (!appKey) {
-            throw new Error(trKey('dropboxKeyMissingShort', 'В AirTab не настроен Dropbox App Key'));
-        }
 
         const token = await getGoogleSyncTokenState();
-        const tokenMatchesApp = token?.appKey === appKey;
-        if (token && !tokenMatchesApp) await clearGoogleSyncTokenState();
+        const tokenAppKey = String(token?.appKey || '').trim();
+        const accessToken = String(token?.accessToken || '').trim();
+        const refreshToken = String(token?.refreshToken || '').trim();
+        const effectiveAppKey = String(appKey || tokenAppKey || '').trim();
 
-        const validToken = tokenMatchesApp && token?.accessToken && Number(token?.expiresAt || 0) > Date.now() + 10_000;
-        if (validToken) return token.accessToken;
-
-        if (tokenMatchesApp && token?.refreshToken) {
+        if (accessToken) {
+            const expiresAt = Number(token?.expiresAt || 0);
+            const looksExpired = Number.isFinite(expiresAt) && expiresAt > 0 && expiresAt <= Date.now() + 10_000;
+            if (!looksExpired) return accessToken;
+            if (!refreshToken || !effectiveAppKey) return accessToken;
             try {
-                const refreshed = await refreshDropboxAccessToken(appKey, token.refreshToken);
+                const refreshed = await refreshDropboxAccessToken(effectiveAppKey, refreshToken);
+                if (refreshed?.accessToken) return refreshed.accessToken;
+            } catch (error) {
+                return accessToken;
+            }
+        }
+
+        if (refreshToken && effectiveAppKey) {
+            try {
+                const refreshed = await refreshDropboxAccessToken(effectiveAppKey, refreshToken);
                 if (refreshed?.accessToken) return refreshed.accessToken;
             } catch (error) {
                 // fallback to interactive auth if allowed
@@ -907,7 +916,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (!interactive) throw new Error(trKey('dropboxNotAuthorized', 'Dropbox не авторизован'));
-        const authorized = await authorizeDropboxInteractive(appKey);
+        if (!effectiveAppKey) {
+            throw new Error(trKey('dropboxKeyMissingShort', 'В AirTab не настроен Dropbox App Key'));
+        }
+        const authorized = await authorizeDropboxInteractive(effectiveAppKey);
         if (!authorized?.accessToken) {
             throw new Error(trKey('dropboxAccessTokenMissing', 'Не удалось получить Dropbox access token'));
         }

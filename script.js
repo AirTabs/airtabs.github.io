@@ -1119,23 +1119,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function getDropboxAccessTokenNonInteractive() {
         const appKey = getConfiguredDropboxAppKey();
-        if (!appKey) return '';
         const token = await getDropboxTokenState();
-        const tokenMatchesApp = token?.appKey === appKey;
-        if (token && !tokenMatchesApp) {
-            await setDropboxTokenState(null);
-            return '';
-        }
-        const validToken = tokenMatchesApp && token?.accessToken && Number(token?.expiresAt || 0) > Date.now() + 10_000;
-        if (validToken) return token.accessToken;
-        if (tokenMatchesApp && token?.refreshToken) {
+        const tokenAppKey = String(token?.appKey || '').trim();
+        const accessToken = String(token?.accessToken || '').trim();
+        const refreshToken = String(token?.refreshToken || '').trim();
+        const effectiveAppKey = String(appKey || tokenAppKey || '').trim();
+
+        if (accessToken) {
+            const expiresAt = Number(token?.expiresAt || 0);
+            const looksExpired = Number.isFinite(expiresAt) && expiresAt > 0 && expiresAt <= Date.now() + 10_000;
+            if (!looksExpired) return accessToken;
+            if (!refreshToken || !effectiveAppKey) return accessToken;
             try {
-                const refreshed = await refreshDropboxAccessToken(appKey, token.refreshToken);
+                const refreshed = await refreshDropboxAccessToken(effectiveAppKey, refreshToken);
+                return refreshed?.accessToken || '';
+            } catch (error) {
+                return accessToken;
+            }
+        }
+
+        if (refreshToken && effectiveAppKey) {
+            try {
+                const refreshed = await refreshDropboxAccessToken(effectiveAppKey, refreshToken);
                 return refreshed?.accessToken || '';
             } catch (error) {
                 return '';
             }
         }
+
         return '';
     }
 
