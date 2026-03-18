@@ -1,8 +1,16 @@
 (() => {
     if (!('serviceWorker' in navigator)) return;
     window.addEventListener('load', () => {
-        const appRootUrl = new URL('../', window.location.href);
-        const swUrl = new URL('sw.js', appRootUrl);
-        navigator.serviceWorker.register(swUrl.toString(), { scope: appRootUrl.pathname }).catch(() => {});
+        navigator.serviceWorker.getRegistrations()
+            .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+            .catch(() => {});
+
+        if ('caches' in window) {
+            caches.keys()
+                .then((keys) => Promise.all(keys
+                    .filter((key) => key.startsWith('airtab-web-'))
+                    .map((key) => caches.delete(key))))
+                .catch(() => {});
+        }
     });
 })();

@@ -1,60 +1,21 @@
-const CACHE_VERSION = 'airtab-web-v3';
-const APP_SHELL = [
-    './',
-    './index.html',
-    './script.js',
-    './preload.js',
-    './web-bootstrap.js',
-    './manifest.webmanifest',
-    './folder-closed.svg',
-    './folder-opened.svg',
-    './icons/icon-16.png',
-    './icons/icon-24.png',
-    './icons/icon-32.png',
-    './icons/icon-48.png',
-    './icons/icon-128.png'
-];
-
 self.addEventListener('install', (event) => {
-    event.waitUntil(
-        caches.open(CACHE_VERSION)
-            .then((cache) => cache.addAll(APP_SHELL))
-            .catch(() => {})
-    );
     self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
     event.waitUntil(
-        caches.keys().then((keys) => Promise.all(
-            keys
-                .filter((key) => key !== CACHE_VERSION)
-                .map((key) => caches.delete(key))
-        ))
+        (async () => {
+            const keys = await caches.keys().catch(() => []);
+            await Promise.all(
+                keys
+                    .filter((key) => key.startsWith('airtab-web-'))
+                    .map((key) => caches.delete(key))
+            ).catch(() => {});
+            await self.registration.unregister().catch(() => {});
+        })()
     );
-    self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
-    const request = event.request;
-    if (request.method !== 'GET') return;
-
-    const requestUrl = new URL(request.url);
-    if (requestUrl.origin !== self.location.origin) return;
-
-    event.respondWith(
-        caches.match(request).then((cached) => {
-            const networkFetch = fetch(request)
-                .then((response) => {
-                    if (response && response.ok) {
-                        const copy = response.clone();
-                        caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy)).catch(() => {});
-                    }
-                    return response;
-                })
-                .catch(() => cached);
-
-            return cached || networkFetch;
-        })
-    );
+    return;
 });
