@@ -46,7 +46,7 @@
             const payload = { type: messageType, url: window.location.href };
             try {
                 if (window.opener && !window.opener.closed) {
-                    window.opener.postMessage(payload, window.location.origin);
+                    window.opener.postMessage(payload, '*');
                 }
             } catch (error) {
                 // ignore cross-window messaging issues
