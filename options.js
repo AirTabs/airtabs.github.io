@@ -69,7 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'закладки'
     ]);
     if (!localStorage.getItem(SYNC_LAST_LOCAL_UPDATED_AT_KEY)) {
-        localStorage.setItem(SYNC_LAST_LOCAL_UPDATED_AT_KEY, String(Date.now()));
+        localStorage.setItem(SYNC_LAST_LOCAL_UPDATED_AT_KEY, '0');
     }
 
     function showStatus(text, type = 'success') {

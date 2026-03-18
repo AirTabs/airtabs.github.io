@@ -90,7 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let data = loadData();
     if (!localStorage.getItem(SYNC_LAST_LOCAL_UPDATED_AT_KEY)) {
-        localStorage.setItem(SYNC_LAST_LOCAL_UPDATED_AT_KEY, String(Date.now()));
+        localStorage.setItem(SYNC_LAST_LOCAL_UPDATED_AT_KEY, '0');
     }
     let selectedIds = new Set();
     let selectionContext = { scope: 'space', folderId: null };
@@ -937,6 +937,11 @@ document.addEventListener('DOMContentLoaded', () => {
             saveDataTimer = 0;
             if (saveDataPending) flushDataSave();
         }, SAVE_DATA_DEBOUNCE_MS);
+    }
+
+    function saveDataAndPushNow() {
+        saveData({ immediate: true });
+        scheduleAutoSyncPush(true);
     }
 
     function readJsonStorage(key, fallback = null) {
@@ -3507,7 +3512,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (insertIndex === fromIndex) return false;
         const [moved] = data.spaces.splice(fromIndex, 1);
         data.spaces.splice(insertIndex, 0, moved);
-        saveData();
+        saveDataAndPushNow();
         renderSpaces();
         renderSpaceSettingsList();
         return true;
@@ -3745,7 +3750,7 @@ document.addEventListener('DOMContentLoaded', () => {
         targetSpace.items = Array.isArray(targetSpace.items) ? targetSpace.items : [];
         targetSpace.items.push(moved);
 
-        saveData();
+        saveDataAndPushNow();
         renderItems();
         renderSpaces();
         renderSpaceSettingsList();
@@ -4336,7 +4341,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     targetFolder.items = targetFolder.items || [];
                     targetFolder.items.push(draggedItem);
                 }
-                saveData();
+                saveDataAndPushNow();
                 renderItems();
                 renderFolderItems();
                 hideDropIndicator();
@@ -4386,7 +4391,7 @@ document.addEventListener('DOMContentLoaded', () => {
             space.items.push(moved);
         }
 
-        saveData();
+        saveDataAndPushNow();
         renderItems();
         renderFolderItems();
         hideDropIndicator();
@@ -4486,7 +4491,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const moved = removeFromSource();
                 targetFolder.items = targetFolder.items || [];
                 targetFolder.items.push(moved);
-                saveData();
+                saveDataAndPushNow();
                 renderItems();
                 hideDropIndicator();
                 clearListPlaceholder();
@@ -4540,7 +4545,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        saveData();
+        saveDataAndPushNow();
         renderItems();
         pushDndDebug('container.drop.applied', {
             draggedId: draggedId || '',
@@ -4617,7 +4622,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const [item] = folder.items.splice(draggedIndex, 1);
         folder.items.splice(insertIndex, 0, item);
 
-        saveData();
+        saveDataAndPushNow();
         renderFolderItems();
         clearListPlaceholder();
         clearGridPlaceholder();
