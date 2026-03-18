@@ -4,7 +4,7 @@
     const extensionApi = (typeof globalThis !== 'undefined' && globalThis.chrome && globalThis.chrome.runtime?.id)
         ? globalThis.chrome
         : null;
-    if (i18n) i18n.init({ observe: true });
+    if (i18n) i18n.init({ observe: false });
     const trText = (text) => (i18n ? i18n.translateText(String(text || '')) : String(text || ''));
     const trKey = (key, fallback, vars = {}) => {
         let text = i18n?.t ? i18n.t(key, vars) : String(fallback || key || '');
@@ -22,6 +22,8 @@
 
     const STORAGE_KEY = 'airtabData';
     const DATA_VERSION = 2;
+    const I18N_LANGUAGE_STORAGE_KEY = 'airtabUiLanguage';
+    const I18N_LANGUAGE_TS_KEY = 'airtabUiLanguageUpdatedAt';
 
     const defaultLinks = [];
 
@@ -327,13 +329,18 @@
         return keyboardModifier || modifierPressed || mobileCommandMode;
     }
 
+    const htmlFragmentTemplate = document.createElement('template');
+
     function replaceWithFragment(container, html) {
         if (!container) return;
-        container.replaceChildren();
-        if (!html) return;
-        const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
-        const nodes = Array.from(doc.body.childNodes).map(node => document.importNode(node, true));
-        container.replaceChildren(...nodes);
+        if (!html) {
+            container.replaceChildren();
+            return;
+        }
+        htmlFragmentTemplate.innerHTML = html;
+        container.replaceChildren(htmlFragmentTemplate.content.cloneNode(true));
+        htmlFragmentTemplate.innerHTML = '';
+        if (i18n?.translateDocument) i18n.translateDocument(container);
     }
 
     function normalizeGradientAngle(value) {
@@ -1916,6 +1923,10 @@
     window.addEventListener('storage', (e) => {
         const key = e?.key || '';
         if (!key) return;
+        if (key === I18N_LANGUAGE_STORAGE_KEY || key === I18N_LANGUAGE_TS_KEY) {
+            window.location.reload();
+            return;
+        }
         if (key === DND_DEBUG_STORAGE_KEY || key === 'airtabSettingsUpdatedAt') {
             dndDebugEnabled = readDndDebugEnabled();
             applyDndDebugVisibility();
@@ -2143,7 +2154,7 @@
         const now = new Date();
         const hours = String(now.getHours()).padStart(2, '0');
         const minutes = String(now.getMinutes()).padStart(2, '0');
-        document.getElementById('clock').innerText = `${hours}:${minutes}`;
+        document.getElementById('clock').textContent = `${hours}:${minutes}`;
     }
 
     let clockAlignTimer = null;
@@ -2887,8 +2898,8 @@
         const countEl = document.getElementById('selectedCount');
         const folderCountEl = document.getElementById('folderSelectedCount');
         const selectedLabel = i18n ? i18n.t('selectedCount', { count: selectedIds.size }) : `${selectedIds.size} выбрано`;
-        if (countEl) countEl.innerText = selectedLabel;
-        if (folderCountEl) folderCountEl.innerText = selectedLabel;
+        if (countEl) countEl.textContent = selectedLabel;
+        if (folderCountEl) folderCountEl.textContent = selectedLabel;
         const openSelectedBtn = document.getElementById('openSelectedBtn');
         const folderOpenSelectedBtn = document.getElementById('folderOpenSelectedBtn');
         if (openSelectedBtn) openSelectedBtn.disabled = selectedIds.size === 0;

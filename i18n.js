@@ -999,11 +999,22 @@
 
   let observeTimer = null;
   let observer = null;
+  let observerEnabled = true;
 
   function disconnectObserver() {
+    if (observeTimer) {
+      window.clearTimeout(observeTimer);
+      observeTimer = null;
+    }
     if (!observer) return;
     observer.disconnect();
     observer = null;
+  }
+
+  function setObserverEnabled(enabled) {
+    observerEnabled = enabled !== false;
+    if (observerEnabled) ensureObserver();
+    else disconnectObserver();
   }
 
   function applyDocumentMeta() {
@@ -1021,10 +1032,17 @@
 
   function scheduleTranslate(target) {
     if (observeTimer) window.clearTimeout(observeTimer);
-    observeTimer = window.setTimeout(() => translateDocument(target || document.body), 16);
+    observeTimer = window.setTimeout(() => {
+      observeTimer = null;
+      translateDocument(target || document.body);
+    }, 16);
   }
 
   function ensureObserver() {
+    if (!observerEnabled) {
+      disconnectObserver();
+      return;
+    }
     if (getActiveLanguage() === 'ru') {
       disconnectObserver();
       return;
@@ -1066,15 +1084,14 @@
   }
 
   function init(options = {}) {
-    const shouldObserve = options.observe !== false;
     translateDocument(document.body);
-    if (shouldObserve) ensureObserver();
-    else disconnectObserver();
+    setObserverEnabled(options.observe !== false);
   }
 
   window.addEventListener('storage', (event) => {
     if (event.key !== STORAGE_KEY && event.key !== STORAGE_TS_KEY) return;
-    ensureObserver();
+    if (observerEnabled) ensureObserver();
+    else disconnectObserver();
     scheduleTranslate(document.body);
   });
 
@@ -1089,6 +1106,7 @@
     t,
     translateText,
     translateDocument,
+    setObserverEnabled,
     init
   };
 

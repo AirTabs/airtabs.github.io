@@ -4,7 +4,7 @@
     const extensionApi = (typeof globalThis !== 'undefined' && globalThis.chrome && globalThis.chrome.runtime?.id)
         ? globalThis.chrome
         : null;
-    if (i18n) i18n.init({ observe: true });
+    if (i18n) i18n.init({ observe: false });
     const trText = (text) => (i18n ? i18n.translateText(String(text || '')) : String(text || ''));
     const trKey = (key, fallback, vars = {}) => {
         let text = i18n?.t ? i18n.t(key, vars) : String(fallback || key || '');
