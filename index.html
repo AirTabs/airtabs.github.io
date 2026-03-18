@@ -5,6 +5,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" content="#2c2c2e">
+    <script>
+        (() => {
+            try {
+                const LOCAL_BG_TOKEN_PREFIX = 'local-file://';
+                const root = document.documentElement;
+                const dataRaw = localStorage.getItem('airtabData');
+                let activeSpaceBg = '';
+                if (dataRaw) {
+                    const data = JSON.parse(dataRaw);
+                    const activeSpace = data?.spaces?.find((space) => space?.id === data?.activeSpaceId);
+                    activeSpaceBg = String(activeSpace?.bg || '').trim();
+                }
+                const bgLight = localStorage.getItem('myBgLight') || localStorage.getItem('myBg') || '#f2f2f7';
+                const bgDark = localStorage.getItem('myBgDark') || '#2c2c2e';
+                const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                const themeBg = isDark ? bgDark : bgLight;
+                const initialBg = activeSpaceBg && !activeSpaceBg.startsWith(LOCAL_BG_TOKEN_PREFIX) ? activeSpaceBg : themeBg;
+                const isColor = initialBg.startsWith('#') || initialBg.startsWith('rgb');
+                const solidFallback = isDark ? '#2c2c2e' : '#f2f2f7';
+                const preloadColor = isColor ? initialBg : solidFallback;
+                root.style.setProperty('--initial-bg', initialBg);
+                root.style.backgroundColor = preloadColor;
+                const themeMeta = document.querySelector('meta[name="theme-color"]');
+                if (themeMeta) themeMeta.setAttribute('content', preloadColor);
+            } catch (e) {}
+        })();
+    </script>
     <title>AirTab</title>
     <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
     <link rel="manifest" href="manifest.webmanifest">
@@ -1302,6 +1329,13 @@
             border-color: rgba(43,89,255,0.5);
             color: var(--text-color);
         }
+        .space-emoji {
+            font-size: 18px;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
         .space-name { max-width: 0; opacity: 0; transition: max-width var(--motion-fast), opacity var(--motion-fast); overflow: hidden; font-weight: 600; }
         .space-pill:hover .space-name, .space-pill.active .space-name { max-width: 160px; opacity: 1; }
         body.space-drop-mode .spaces-nav {
@@ -2048,12 +2082,40 @@
                 bottom: 14px;
             }
             .spaces-nav {
+                left: 76px;
+                right: 14px;
                 bottom: 14px;
-                max-width: calc(100vw - 138px);
+                width: auto;
+                max-width: none;
+                transform: none;
+                padding: 8px 10px;
                 transition: transform var(--motion-fast), opacity var(--motion-fast), box-shadow var(--motion-fast);
             }
+            .space-arrow {
+                display: none;
+            }
+            .spaces-strip {
+                flex: 1 1 auto;
+                min-width: 0;
+                max-width: none;
+            }
+            .space-pill {
+                padding: 6px 10px;
+                gap: 6px;
+            }
+            .space-pill:hover .space-name {
+                max-width: 0;
+                opacity: 0;
+            }
+            .space-pill.active .space-name {
+                max-width: 120px;
+                opacity: 1;
+            }
+            .space-add {
+                flex-shrink: 0;
+            }
             body.mobile-bottom-hidden .spaces-nav {
-                transform: translate(-50%, calc(100% + 120px));
+                transform: translateY(calc(100% + 120px));
                 opacity: 0;
                 pointer-events: none;
             }

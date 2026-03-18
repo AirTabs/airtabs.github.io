@@ -61,8 +61,11 @@
         const isLocalBgToken = spaceBgRaw.startsWith(LOCAL_BG_TOKEN_PREFIX);
         const initialBg = (spaceBgRaw && !isLocalBgToken) ? spaceBgRaw : themeFallbackBg;
         const isSolidColor = initialBg.startsWith('#') || initialBg.startsWith('rgb');
+        const solidFallback = isDark ? '#2c2c2e' : '#f2f2f7';
+        const preloadColor = isSolidColor ? initialBg : solidFallback;
         root.style.setProperty('--initial-bg', initialBg);
         root.style.setProperty('--preload-bg-image', 'none');
+        root.style.backgroundColor = preloadColor;
         root.classList.add('preload');
 
         if (isSolidColor) {
@@ -77,8 +80,8 @@
         }
 
         const themeMeta = document.querySelector('meta[name="theme-color"]');
-        if (themeMeta && (initialBg.startsWith('#') || initialBg.startsWith('rgb'))) {
-            themeMeta.setAttribute('content', initialBg);
+        if (themeMeta) {
+            themeMeta.setAttribute('content', preloadColor);
         }
     } catch (e) {}
 })();
