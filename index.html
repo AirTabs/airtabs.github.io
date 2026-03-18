@@ -1197,6 +1197,34 @@
         }
         .settings-btn:hover { transform: translateY(-2px) scale(1.02); }
 
+        .mobile-command-btn {
+            position: fixed;
+            left: 20px;
+            bottom: 20px;
+            width: 54px;
+            height: 54px;
+            border-radius: 22px;
+            border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--outline));
+            background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+            color: var(--text-color);
+            box-shadow: var(--shadow-2);
+            font-size: 22px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 11;
+            cursor: pointer;
+            transition: transform var(--motion-fast), background var(--motion-fast), color var(--motion-fast), border-color var(--motion-fast);
+        }
+        .mobile-command-btn:hover {
+            transform: translateY(-2px);
+        }
+        .mobile-command-btn.active {
+            background: var(--primary);
+            color: var(--on-primary);
+            border-color: color-mix(in srgb, var(--primary) 72%, #ffffff 28%);
+        }
+
         .spaces-nav {
             position: fixed;
             bottom: 20px;
@@ -1952,6 +1980,7 @@
         @media (max-width: 900px) {
             .layout { grid-template-columns: 1fr; }
             .sidebar { width: 100%; }
+            .mobile-command-btn { display: inline-flex; }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -2036,6 +2065,7 @@
     </div>
     <button type="button" class="space-action-zone space-edit-zone" id="spaceEditZone" aria-label="Редактировать пространство">✎</button>
     <button type="button" class="space-action-zone space-trash-zone" id="spaceTrashZone" aria-label="Удалить пространство">🗑</button>
+    <button type="button" class="mobile-command-btn" id="mobileCommandBtn" aria-label="Режим выбора и быстрые действия" aria-pressed="false" title="Режим выбора">✎</button>
     <button type="button" class="settings-btn" id="quickOptionsBtn" aria-label="Параметры AirTab" title="Параметры AirTab">⚙</button>
     <div class="dnd-debug" id="dndDebug" aria-live="polite">
         <div class="dnd-debug-title">DND Debug</div>

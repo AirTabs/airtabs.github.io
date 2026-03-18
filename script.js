@@ -72,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const rightSidebarQuery = window.matchMedia(HIDE_RIGHT_SIDEBAR_QUERY);
+    const mobileCommandModeQuery = window.matchMedia('(max-width: 900px)');
     let rightSidebarHidden = rightSidebarQuery.matches;
 
     let data = loadData();
@@ -81,6 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedIds = new Set();
     let selectionContext = { scope: 'space', folderId: null };
     let modifierPressed = false;
+    let mobileCommandMode = false;
     let currentFolderContext = null;
     let pendingFolderReturn = null;
     let currentItemType = 'link';
@@ -127,6 +129,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function normalizeFolderView(value) {
         return value === 'grid' ? 'grid' : 'list';
+    }
+
+    function isSelectionModifierActive(event = null) {
+        const keyboardModifier = !!(event && (event.metaKey || event.ctrlKey));
+        return keyboardModifier || modifierPressed || mobileCommandMode;
     }
 
     function replaceWithFragment(container, html) {
@@ -1585,6 +1592,11 @@ document.addEventListener('DOMContentLoaded', () => {
         renderSidebars();
     });
 
+    mobileCommandModeQuery.addEventListener('change', (e) => {
+        if (e.matches) return;
+        if (mobileCommandMode) setMobileCommandMode(false, { clearSelection: true });
+    });
+
     function getBrightness(color) {
         let r, g, b;
         if (color.startsWith('#')) {
@@ -2177,12 +2189,31 @@ document.addEventListener('DOMContentLoaded', () => {
         runSpaceItemsEnterAnimation(direction);
     }
 
+    function setMobileCommandMode(active, options = {}) {
+        const next = !!active;
+        const clearSelection = options?.clearSelection === true;
+        if (mobileCommandMode === next && !clearSelection) return;
+        mobileCommandMode = next;
+        if (!mobileCommandMode && clearSelection) {
+            selectedIds.clear();
+            selectionContext = { scope: 'space', folderId: null };
+        }
+        updateSelectionUI();
+    }
+
     function updateSelectionUI() {
         const selectionActive = selectedIds.size > 0;
         const isFolderScope = selectionContext.scope === 'folder';
+        const modifierLikeActive = modifierPressed || mobileCommandMode;
         document.body.classList.toggle('selection-mode', selectionActive);
-        document.body.classList.toggle('modifier-hint', modifierPressed && !selectionActive);
-        document.body.classList.toggle('modifier-options-visible', modifierPressed);
+        document.body.classList.toggle('modifier-hint', modifierLikeActive && !selectionActive);
+        document.body.classList.toggle('modifier-options-visible', modifierLikeActive);
+        document.body.classList.toggle('mobile-command-mode', mobileCommandMode);
+        const mobileCommandBtn = document.getElementById('mobileCommandBtn');
+        if (mobileCommandBtn) {
+            mobileCommandBtn.classList.toggle('active', mobileCommandMode);
+            mobileCommandBtn.setAttribute('aria-pressed', mobileCommandMode ? 'true' : 'false');
+        }
         document.querySelectorAll('.drag-item.selected').forEach(el => {
             if (!selectedIds.has(el.dataset.id)) el.classList.remove('selected');
         });
@@ -2256,29 +2287,57 @@ document.addEventListener('DOMContentLoaded', () => {
         updateSelectionUI();
     }
 
+    function collectLinksFromEntry(entry) {
+        if (!entry) return [];
+        const isFolderLike = entry.type === 'folder' || Array.isArray(entry.items);
+        if (!isFolderLike) return entry.url ? [entry] : [];
+        const links = [];
+        (entry.items || []).forEach(child => {
+            links.push(...collectLinksFromEntry(child));
+        });
+        return links;
+    }
+
+    function openLinksInTabs(items) {
+        if (!Array.isArray(items) || !items.length) return;
+        let openedCount = 0;
+        items.forEach((item) => {
+            const url = normalizeUrl(item?.url || '');
+            if (!url) return;
+            if (extensionApi?.tabs?.create) {
+                try {
+                    extensionApi.tabs.create({ url });
+                    openedCount += 1;
+                    return;
+                } catch (error) {
+                    // Fallback to window.open below.
+                }
+            }
+            const popup = window.open(url, '_blank');
+            if (popup) openedCount += 1;
+        });
+        if (!extensionApi?.tabs?.create && items.length > 1 && openedCount < items.length) {
+            alert(trKey(
+                'openTabsPopupBlocked',
+                'Браузер заблокировал часть вкладок. Разрешите всплывающие окна для AirTab, чтобы открыть все.'
+            ));
+        }
+    }
+
     function openSelectedInTabs() {
         const space = getActiveSpace();
+        let selectedEntries = [];
         let items = [];
-
-        const collectLinks = (folder) => {
-            const list = [];
-            (folder?.items || []).forEach(entry => {
-                if (entry.type === 'link') list.push(entry);
-                if (entry.type === 'folder') list.push(...collectLinks(entry));
-            });
-            return list;
-        };
 
         if (selectionContext.scope === 'folder' && selectionContext.folderId) {
             const folder = getFolderById(space, selectionContext.folderId);
-            items = folder?.items.filter(item => selectedIds.has(item.id)) || [];
+            selectedEntries = folder?.items.filter(item => selectedIds.has(item.id)) || [];
         } else {
-            const selectedItems = (space.items || []).filter(item => selectedIds.has(item.id));
-            selectedItems.forEach(item => {
-                if (item.type === 'link') items.push(item);
-                if (item.type === 'folder') items.push(...collectLinks(item));
-            });
+            selectedEntries = (space.items || []).filter(item => selectedIds.has(item.id));
         }
+        selectedEntries.forEach(entry => {
+            items.push(...collectLinksFromEntry(entry));
+        });
 
         if (!items.length) return;
         if (items.length > 10) {
@@ -2287,7 +2346,7 @@ document.addEventListener('DOMContentLoaded', () => {
             );
             if (!ok) return;
         }
-        items.forEach(item => window.open(item.url, '_blank'));
+        openLinksInTabs(items);
         selectedIds.clear();
         selectionContext = { scope: 'space', folderId: null };
         updateSelectionUI();
@@ -2427,15 +2486,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const space = getActiveSpace();
         const folder = getFolderById(space, folderId);
         if (!folder) return;
-        const collectLinks = (entry) => {
-            const result = [];
-            (entry.items || []).forEach(item => {
-                if (item.type === 'link') result.push(item);
-                if (item.type === 'folder') result.push(...collectLinks(item));
-            });
-            return result;
-        };
-        const items = collectLinks(folder);
+        const items = collectLinksFromEntry(folder);
         if (!items.length) return;
         if (items.length > 10) {
             const ok = confirm(
@@ -2443,7 +2494,7 @@ document.addEventListener('DOMContentLoaded', () => {
             );
             if (!ok) return;
         }
-        items.forEach(item => window.open(item.url, '_blank'));
+        openLinksInTabs(items);
     }
 
     function toggleFolderMenu(folderId) {
@@ -4578,7 +4629,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const item = e.target.closest('.drag-item');
         const selectionActive = selectedIds.size > 0;
-        const isModifier = e.metaKey || e.ctrlKey || modifierPressed;
+        const isModifier = isSelectionModifierActive(e);
         if (item && selectionActive && !isModifier) {
             const linkAnchor = e.target.closest('a');
             if (linkAnchor) {
@@ -4678,7 +4729,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const folderId = folderRow.dataset.id;
             const action = e.target.closest('.folder-toggle')?.dataset.action;
             const selectionActive = selectedIds.size > 0;
-            const isModifier = e.metaKey || e.ctrlKey || modifierPressed;
+            const isModifier = isSelectionModifierActive(e);
 
             if (action === 'toggle') {
                 e.preventDefault();
@@ -4704,7 +4755,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             const selectionActive = selectedIds.size > 0;
-            const isModifier = e.metaKey || e.ctrlKey || modifierPressed;
+            const isModifier = isSelectionModifierActive(e);
             if (selectionActive && !isModifier && e.target.closest('a')) {
                 selectedIds.clear();
                 selectionContext = { scope: 'space', folderId: null };
@@ -4734,7 +4785,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const item = e.target.closest('.drag-item');
         if (!item) return;
         const selectionActive = selectedIds.size > 0;
-        const isModifier = e.metaKey || e.ctrlKey || modifierPressed;
+        const isModifier = isSelectionModifierActive(e);
         if (isModifier || selectionActive) {
             e.preventDefault();
             toggleSelectionForItem(item, 'space', null);
@@ -4774,7 +4825,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const item = e.target.closest('.drag-item');
         const selectionActive = selectedIds.size > 0;
-        const isModifier = e.metaKey || e.ctrlKey || modifierPressed;
+        const isModifier = isSelectionModifierActive(e);
         if ((isModifier || selectionActive) && item) {
             e.preventDefault();
             toggleSelectionForItem(item, 'folder', currentFolderContext?.folderId || null);
@@ -4961,6 +5012,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (quickOptionsBtn) {
         quickOptionsBtn.addEventListener('click', () => {
             window.location.href = 'options.html';
+        });
+    }
+
+    const mobileCommandBtn = document.getElementById('mobileCommandBtn');
+    if (mobileCommandBtn) {
+        mobileCommandBtn.addEventListener('click', () => {
+            const nextState = !mobileCommandMode;
+            setMobileCommandMode(nextState, { clearSelection: !nextState });
         });
     }
 
