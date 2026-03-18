@@ -116,6 +116,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let dropboxTokenStateCacheLoaded = false;
     let dropboxTokenStateCache = null;
 
+    function invalidateDropboxTokenCache() {
+        dropboxTokenStateCacheLoaded = false;
+        dropboxTokenStateCache = null;
+    }
+
     document.addEventListener('error', (event) => {
         const target = event.target;
         if (!(target instanceof HTMLImageElement)) return;
@@ -1047,7 +1052,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function getDropboxTokenState() {
-        if (dropboxTokenStateCacheLoaded) return dropboxTokenStateCache;
+        if (dropboxTokenStateCacheLoaded) {
+            if (!dropboxTokenStateCache) {
+                const maybeFromStorage = readJsonStorage(SYNC_DROPBOX_TOKEN_KEY, null);
+                if (maybeFromStorage && typeof maybeFromStorage === 'object') {
+                    dropboxTokenStateCache = maybeFromStorage;
+                }
+            }
+            return dropboxTokenStateCache;
+        }
         let tokenState = await readDropboxTokenStateFromSessionStore();
         const legacy = readJsonStorage(SYNC_DROPBOX_TOKEN_KEY, null);
         if (!tokenState && legacy) {
@@ -1614,6 +1627,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (key === DND_DEBUG_STORAGE_KEY || key === 'airtabSettingsUpdatedAt') {
             dndDebugEnabled = readDndDebugEnabled();
             applyDndDebugVisibility();
+        }
+        if (key === SYNC_DROPBOX_TOKEN_KEY || key === DROPBOX_APP_KEY_STORAGE_KEY || key === SYNC_DROPBOX_META_KEY) {
+            invalidateDropboxTokenCache();
         }
         if (key === STORAGE_KEY) {
             data = loadData();
