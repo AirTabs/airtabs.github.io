@@ -4,7 +4,8 @@
 
 ## Что внутри
 - `index.html` — основное приложение AirTab
-- `options.html` — настройки/синхронизация/импорт
+- `options/index.html` — настройки/синхронизация/импорт
+- `options.html` — обратная совместимость (редирект на `/options/`)
 - `oauth/dropbox-callback.html` — callback для Dropbox OAuth (web flow)
 - `sw.js` + `manifest.webmanifest` — PWA-кэш и офлайн-оболочка
 
@@ -17,8 +18,8 @@ python3 -m http.server 8080
 ```
 
 Открыть:
-- `http://localhost:8080/index.html`
-- `http://localhost:8080/options.html`
+- `http://localhost:8080/`
+- `http://localhost:8080/options/`
 
 ## Деплой на GitHub Pages
 1. Создай репозиторий (например `airtab-web`).

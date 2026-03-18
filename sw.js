@@ -1,7 +1,9 @@
-const CACHE_VERSION = 'airtab-web-v1';
+const CACHE_VERSION = 'airtab-web-v2';
 const APP_SHELL = [
     './',
     './index.html',
+    './options/',
+    './options/index.html',
     './options.html',
     './script.js',
     './options.js',

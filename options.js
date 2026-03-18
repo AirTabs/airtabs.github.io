@@ -708,7 +708,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (extensionApi?.identity?.getRedirectURL) {
             return extensionApi.identity.getRedirectURL('airtab-dropbox-sync');
         }
-        return new URL(DROPBOX_WEB_CALLBACK_PATH, window.location.href).toString();
+        const appRootUrl = new URL('../', window.location.href);
+        return new URL(DROPBOX_WEB_CALLBACK_PATH, appRootUrl).toString();
     }
 
     function launchWebAuthFlowPopup(url, interactive) {
@@ -967,7 +968,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!response.ok) {
             const payload = await response.json().catch(() => ({}));
             const err = payload?.error_summary || payload?.error || `HTTP ${response.status}`;
-            throw new Error(String(err));
+            const message = String(err);
+            const missing = response.status === 409 && /not[_/ -]?found/i.test(message);
+            const error = new Error(message);
+            if (missing) error.code = 'DROPBOX_FILE_NOT_FOUND';
+            throw error;
         }
         return await response.text();
     }
@@ -1503,8 +1508,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function syncPullFromGoogleDrive() {
-        const accessToken = await getGoogleDriveAccessToken({ interactive: true });
+    async function syncPullFromGoogleDrive(options = {}) {
+        const interactive = options.interactive !== false;
+        const accessToken = await getGoogleDriveAccessToken({ interactive });
         const fileName = getGoogleSyncFileName();
         const text = await downloadGoogleDriveSyncFile(accessToken, fileName);
         const imported = JSON.parse(String(text || '{}'));
@@ -2509,8 +2515,25 @@ document.addEventListener('DOMContentLoaded', () => {
         btnGoogleConnect.addEventListener('click', async () => {
             try {
                 await connectGoogleDriveSync();
-                await syncPushToGoogleDrive({ interactive: false });
-                showStatus(trKey('dropboxConnected', 'Dropbox подключен.'));
+                try {
+                    await syncPullFromGoogleDrive({ interactive: false });
+                    showStatus(trKey('syncFromDropboxDone', 'Синхронизация из Dropbox выполнена.'));
+                } catch (pullError) {
+                    const pullMessage = String(pullError?.message || '');
+                    const cloudFileMissing = pullError?.code === 'DROPBOX_FILE_NOT_FOUND'
+                        || /not[_/ -]?found/i.test(pullMessage);
+                    if (cloudFileMissing) {
+                        await syncPushToGoogleDrive({ interactive: false });
+                        showStatus(
+                            trKey(
+                                'dropboxConnectedSeeded',
+                                'Dropbox подключен. Облачный sync-файл не найден, создан новый из текущих данных.'
+                            )
+                        );
+                    } else {
+                        throw pullError;
+                    }
+                }
             } catch (error) {
                 const message = error?.message || trKey('genericError', 'ошибка');
                 setGoogleSyncError(message);
@@ -2561,9 +2584,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('btnOpenNewTab').addEventListener('click', () => {
         if (extensionApi?.tabs?.create && extensionApi.runtime?.getURL) {
-            extensionApi.tabs.create({ url: extensionApi.runtime.getURL('index.html') });
+            extensionApi.tabs.create({ url: extensionApi.runtime.getURL('') });
         } else {
-            window.open('index.html', '_blank', 'noopener,noreferrer');
+            const appRootUrl = new URL('../', window.location.href).toString();
+            window.open(appRootUrl, '_blank', 'noopener,noreferrer');
         }
     });
 

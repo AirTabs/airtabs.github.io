@@ -13,6 +13,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return text;
     };
 
+    if (window.location.pathname.endsWith('/index.html')) {
+        const canonicalPath = window.location.pathname.slice(0, -'index.html'.length);
+        const canonicalUrl = `${canonicalPath}${window.location.search}${window.location.hash}`;
+        window.history.replaceState(null, '', canonicalUrl);
+    }
+
     const STORAGE_KEY = 'airtabData';
     const DATA_VERSION = 2;
 
@@ -622,20 +628,21 @@ document.addEventListener('DOMContentLoaded', () => {
         return normalized;
     }
 
-    function getUniqueFolderName(space, baseName = 'Новая папка') {
+    function getUniqueFolderName(space, baseName = '') {
+        const safeBaseName = String(baseName || '').trim() || trKey('newFolder', 'Новая папка');
         const names = (space.items || [])
             .filter(item => item.type === 'folder')
             .map(item => (item.name || '').toLowerCase());
-        const baseLower = baseName.toLowerCase();
-        if (!names.includes(baseLower)) return baseName;
+        const baseLower = safeBaseName.toLowerCase();
+        if (!names.includes(baseLower)) return safeBaseName;
         let i = 2;
         while (names.includes(`${baseLower} (${i})`)) i += 1;
-        return `${baseName} (${i})`;
+        return `${safeBaseName} (${i})`;
     }
 
     function createQuickFolder(targetSidebar = 'left') {
         const space = getActiveSpace();
-        const name = getUniqueFolderName(space, 'Новая папка');
+        const name = getUniqueFolderName(space, trKey('newFolder', 'Новая папка'));
         const newFolder = {
             id: createId('folder'),
             type: 'folder',
@@ -1593,8 +1600,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     mobileCommandModeQuery.addEventListener('change', (e) => {
-        if (e.matches) return;
-        if (mobileCommandMode) setMobileCommandMode(false, { clearSelection: true });
+        if (!e.matches && mobileCommandMode) {
+            setMobileCommandMode(false, { clearSelection: true });
+        }
+        resetMobileBottomVisibilityOnViewportChange();
     });
 
     function getBrightness(color) {
@@ -1849,6 +1858,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const cards = [];
         const space = getActiveSpace();
         const items = space.items || [];
+        const itemActionsLabel = trKey('itemActions', 'Действия элемента');
+        const addLabel = trKey('add', 'Добавить');
 
         items.forEach((item) => {
             const isSelected = selectedIds.has(item.id);
@@ -1861,7 +1872,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="card-container drag-item ${selectedClass}" draggable="true" data-id="${item.id}" data-type="link">
                     <div class="select-indicator"></div>
                     <div class="card-box-wrap">
-                        <button type="button" class="edit-btn" data-id="${item.id}" aria-label="Действия элемента">⋮</button>
+                        <button type="button" class="edit-btn" data-id="${item.id}" aria-label="${itemActionsLabel}">⋮</button>
                         <a href="${item.url}" class="card-box" draggable="false">
                             <img ${iconAttrs} alt="" loading="lazy" decoding="async">
                         </a>
@@ -1876,7 +1887,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="card-box-wrap">
                     <div class="card-box add-btn-box" data-add="square" data-force-type="link">+</div>
                 </div>
-                <div class="card-text">Добавить</div>
+                <div class="card-text">${addLabel}</div>
             </div>
         `);
         replaceWithFragment(grid, cards.join(''));
@@ -1896,6 +1907,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderSidebarList(container, items) {
         const folderClosedSvg = `<img src="folder-closed.svg" alt="" loading="lazy" decoding="async">`;
         const folderOpenSvg = `<img src="folder-opened.svg" alt="" loading="lazy" decoding="async">`;
+        const itemActionsLabel = trKey('itemActions', 'Действия элемента');
+        const expandFolderLabel = trKey('expandFolder', 'Развернуть папку');
+        const collapseFolderLabel = trKey('collapseFolder', 'Свернуть папку');
+        const folderLabel = trKey('folder', 'Папка');
+        const folderActionsLabel = trKey('folderActions', 'Действия папки');
+        const editLabel = trKey('edit', 'Редактировать');
+        const openTabsLabel = trKey('openTabs', 'Открыть вкладки');
+        const deleteLabel = trKey('delete', 'Удалить');
         const renderTreeItems = (entries, parentId = null) => {
             return entries.map(entry => {
                 if (entry.type === 'link') {
@@ -1906,7 +1925,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return `
                         <div class="compact-wrapper drag-item ${childClass} ${selectedClass}" draggable="true" data-id="${entry.id}" data-type="link" ${parentId ? `data-parent="${parentId}"` : ''}>
                             <div class="select-indicator"></div>
-                            <button type="button" class="edit-btn" data-id="${entry.id}" ${parentId ? 'data-scope="folder"' : ''} aria-label="Действия элемента">⋮</button>
+                            <button type="button" class="edit-btn" data-id="${entry.id}" ${parentId ? 'data-scope="folder"' : ''} aria-label="${itemActionsLabel}">⋮</button>
                             <a href="${entry.url}" class="compact-card" draggable="false">
                                 <img ${iconAttrs} alt="" loading="lazy" decoding="async">
                                 <span>${entry.name}</span>
@@ -1928,22 +1947,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     return `
                         <div class="tree-folder ${isCollapsed ? '' : 'expanded'} ${isMenuOpen ? 'menu-open' : ''} drag-item ${selectedClass}" draggable="true" data-id="${folder.id}" data-type="folder" ${parentId ? `data-parent="${parentId}"` : ''} ${styleAttr}>
                             <div class="select-indicator"></div>
-                            <button type="button" class="folder-toggle ${hasEmoji ? 'is-emoji' : ''}" data-action="toggle" aria-label="${isCollapsed ? 'Развернуть папку' : 'Свернуть папку'}">
+                            <button type="button" class="folder-toggle ${hasEmoji ? 'is-emoji' : ''}" data-action="toggle" aria-label="${isCollapsed ? expandFolderLabel : collapseFolderLabel}">
                                 ${hasEmoji
                                     ? `${folder.emoji}`
                                     : `<span class="folder-svg icon-closed">${folderClosedSvg}</span>
                                        <span class="folder-svg icon-open">${folderOpenSvg}</span>`
                                 }
                             </button>
-                            <span class="tree-name">${folder.name || 'Папка'}</span>
+                            <span class="tree-name">${folder.name || folderLabel}</span>
                             <div class="tree-actions">
-                                <button type="button" class="tree-btn" data-action="menu" title="Действия" aria-label="Действия папки">⋮</button>
+                                <button type="button" class="tree-btn" data-action="menu" title="${folderActionsLabel}" aria-label="${folderActionsLabel}">⋮</button>
                             </div>
                             ${isMenuOpen ? `
                                 <div class="tree-menu" data-menu="${folder.id}">
-                                    <button type="button" class="tree-menu-btn" data-action="edit">Редактировать</button>
-                                    <button type="button" class="tree-menu-btn" data-action="open-tabs">Открыть вкладки</button>
-                                    <button type="button" class="tree-menu-btn danger" data-action="delete">Удалить</button>
+                                    <button type="button" class="tree-menu-btn" data-action="edit">${editLabel}</button>
+                                    <button type="button" class="tree-menu-btn" data-action="open-tabs">${openTabsLabel}</button>
+                                    <button type="button" class="tree-menu-btn danger" data-action="delete">${deleteLabel}</button>
                                 </div>
                             ` : ''}
                         </div>
@@ -1986,6 +2005,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const folderGrid = document.getElementById('folderGrid');
         folderGrid.textContent = '';
         const folderCards = [];
+        const itemActionsLabel = trKey('itemActions', 'Действия элемента');
 
         if (!currentFolderContext) return;
         const space = getActiveSpace();
@@ -2009,7 +2029,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="select-indicator"></div>
                         <div class="card-box-wrap">
                             <button type="button" class="move-out-btn" data-id="${item.id}" title="Вынести" aria-label="Вынести из папки">↗</button>
-                            <button type="button" class="edit-btn" data-id="${item.id}" data-scope="folder" aria-label="Действия элемента">⋮</button>
+                            <button type="button" class="edit-btn" data-id="${item.id}" data-scope="folder" aria-label="${itemActionsLabel}">⋮</button>
                             <a href="${item.url}" class="card-box" draggable="false">
                                 <img ${iconAttrs} alt="" loading="lazy" decoding="async">
                             </a>
@@ -2022,7 +2042,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="compact-wrapper drag-item ${selectedClass}" draggable="true" data-id="${item.id}" data-type="link" data-scope="folder">
                         <div class="select-indicator"></div>
                         <button type="button" class="move-out-btn" data-id="${item.id}" title="Вынести" aria-label="Вынести из папки">↗</button>
-                        <button type="button" class="edit-btn" data-id="${item.id}" data-scope="folder" aria-label="Действия элемента">⋮</button>
+                        <button type="button" class="edit-btn" data-id="${item.id}" data-scope="folder" aria-label="${itemActionsLabel}">⋮</button>
                         <a href="${item.url}" class="compact-card" draggable="false">
                             <img ${iconAttrs} alt="" loading="lazy" decoding="async">
                             <span>${item.name}</span>
@@ -2037,11 +2057,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderSearchDropdown() {
         const menu = document.getElementById('engineListMenu');
         const menuItems = [];
+        const chooseEngineLabel = trKey('chooseSearchEngine', 'Выбрать поисковую систему');
         const activeEngine = engines.find(e => e.id == activeEngineId) || engines[0];
         if (activeEngine) document.getElementById('currentEngineIcon').src = activeEngine.icon;
         engines.forEach(eng => {
             menuItems.push(`
-                <button type="button" class="engine-list-item" data-id="${eng.id}" title="${eng.name}" aria-label="Выбрать поисковик">
+                <button type="button" class="engine-list-item" data-id="${eng.id}" title="${eng.name}" aria-label="${chooseEngineLabel}">
                     <img src="${eng.icon}" alt="${eng.name}">
                 </button>
             `);
@@ -3201,6 +3222,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const spaceAddBtnEl = document.getElementById('spaceAddBtn');
     const spaceEditZoneEl = document.getElementById('spaceEditZone');
     const spaceTrashZoneEl = document.getElementById('spaceTrashZone');
+    let mobileBottomHidden = false;
+    let lastMobileScrollTop = 0;
     const dropIndicator = document.createElement('div');
     dropIndicator.className = 'drop-indicator';
     document.body.appendChild(dropIndicator);
@@ -3216,6 +3239,40 @@ document.addEventListener('DOMContentLoaded', () => {
     let lastDragPoint = { x: null, y: null };
     let spaceAddIntentActive = false;
     let hoverFolderDropTargetId = null;
+
+    function setMobileBottomHidden(hidden) {
+        const next = !!hidden;
+        if (mobileBottomHidden === next) return;
+        mobileBottomHidden = next;
+        document.body.classList.toggle('mobile-bottom-hidden', next);
+    }
+
+    function resetMobileBottomVisibilityOnViewportChange() {
+        if (!mobileCommandModeQuery.matches) {
+            setMobileBottomHidden(false);
+            return;
+        }
+        lastMobileScrollTop = Number(container?.scrollTop || 0);
+    }
+
+    function handleMobileScrollVisibility() {
+        if (!mobileCommandModeQuery.matches || !container) {
+            setMobileBottomHidden(false);
+            return;
+        }
+        const top = Number(container.scrollTop || 0);
+        const delta = top - lastMobileScrollTop;
+        lastMobileScrollTop = top;
+        if (top <= 20) {
+            setMobileBottomHidden(false);
+            return;
+        }
+        if (Math.abs(delta) < 6) return;
+        setMobileBottomHidden(delta > 0);
+    }
+
+    resetMobileBottomVisibilityOnViewportChange();
+    container?.addEventListener('scroll', handleMobileScrollVisibility, { passive: true });
 
     function isDragTransferActive() {
         return !!(draggedId || folderDraggedId);
@@ -5011,7 +5068,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const quickOptionsBtn = document.getElementById('quickOptionsBtn');
     if (quickOptionsBtn) {
         quickOptionsBtn.addEventListener('click', () => {
-            window.location.href = 'options.html';
+            window.location.href = new URL('options/', window.location.href).toString();
         });
     }
 
