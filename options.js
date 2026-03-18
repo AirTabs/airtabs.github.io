@@ -18,11 +18,27 @@
     const DATA_VERSION = 2;
     const defaultLinks = [];
     const defaultEngines = [
-        { id: 1, name: 'Kagi', url: 'https://kagi.com/search?q=', icon: 'https://kagi.com/favicon.ico' }
+        { id: 1, name: 'DuckDuckGo', url: 'https://duckduckgo.com/?q=%s', icon: 'https://duckduckgo.com/favicon.ico' }
     ];
+    const HOST_DISPLAY_NAME_MAP = Object.freeze({
+        'duckduckgo.com': 'DuckDuckGo',
+        'google.com': 'Google',
+        'bing.com': 'Bing',
+        'yandex.com': 'Yandex',
+        'yandex.ru': 'Yandex',
+        'kagi.com': 'Kagi',
+        'youtube.com': 'YouTube',
+        'wikipedia.org': 'Wikipedia',
+        'github.com': 'GitHub',
+        'reddit.com': 'Reddit',
+        'ecosia.org': 'Ecosia',
+        'startpage.com': 'Startpage',
+        'brave.com': 'Brave'
+    });
     const defaultBgLight = '#f2f2f7';
     const defaultBgDark = '#2c2c2e';
     const DND_DEBUG_STORAGE_KEY = 'airtabDndDebugEnabled';
+    const BROWSER_PROFILE_STORAGE_KEY = 'airtabBrowserProfile';
     const LOCAL_BG_DB_NAME = 'airtabLocalBackgrounds';
     const LOCAL_BG_DB_VERSION = 2;
     const LOCAL_BG_HANDLES_STORE = 'themeHandles';
@@ -94,6 +110,85 @@
         if (!trimmed) return '';
         if (!/^https?:\/\//i.test(trimmed)) return `https://${trimmed}`;
         return trimmed;
+    }
+
+    function getHostname(url) {
+        try { return new URL(url).hostname; } catch (e) { return ''; }
+    }
+
+    function getRemoteFaviconUrl(hostname, size = 64) {
+        if (!hostname) return '';
+        return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=${size}`;
+    }
+
+    function getHostnameDisplayName(hostname, fallback = '') {
+        const host = String(hostname || '').trim().toLowerCase()
+            .replace(/^www\./, '')
+            .replace(/^m\./, '');
+        if (!host) return fallback;
+        const directPreset = HOST_DISPLAY_NAME_MAP[host];
+        if (directPreset) return directPreset;
+        const segments = host.split('.').filter(Boolean);
+        if (segments.length >= 2) {
+            const registrable = segments.slice(-2).join('.');
+            const preset = HOST_DISPLAY_NAME_MAP[registrable];
+            if (preset) return preset;
+        }
+        const seed = segments[0] || '';
+        const cleaned = seed.replace(/^xn--/, '').replace(/[-_]+/g, ' ').trim();
+        if (!cleaned) return fallback;
+        return cleaned
+            .split(/\s+/)
+            .filter(Boolean)
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(' ');
+    }
+
+    function suggestNameFromUrl(rawUrl, fallback = '') {
+        const cleanUrl = normalizeUrl(rawUrl || '');
+        if (!cleanUrl) return fallback;
+        const hostname = getHostname(cleanUrl);
+        return getHostnameDisplayName(hostname, fallback) || fallback;
+    }
+
+    function suggestIconFromUrl(rawUrl, size = 64) {
+        const cleanUrl = normalizeUrl(rawUrl || '');
+        if (!cleanUrl) return '';
+        const hostname = getHostname(cleanUrl);
+        return getRemoteFaviconUrl(hostname, size);
+    }
+
+    function applyAutoFillValue(inputEl, nextValue) {
+        if (!inputEl) return;
+        const value = String(nextValue || '').trim();
+        if (!value) return;
+        const current = String(inputEl.value || '').trim();
+        const autoValue = String(inputEl.dataset.autoValue || '').trim();
+        if (!current || (autoValue && current === autoValue)) {
+            inputEl.value = value;
+            inputEl.dataset.autoValue = value;
+        }
+    }
+
+    function markAutoFillValueAsManual(inputEl) {
+        if (!inputEl) return;
+        const autoValue = String(inputEl.dataset.autoValue || '').trim();
+        if (!autoValue) return;
+        const current = String(inputEl.value || '').trim();
+        if (current !== autoValue) {
+            inputEl.dataset.autoValue = '';
+        }
+    }
+
+    function maybeAutofillEngineFieldsFromUrl() {
+        const urlInput = document.getElementById('engineUrl');
+        const nameInput = document.getElementById('engineName');
+        const iconInput = document.getElementById('engineIcon');
+        const url = String(urlInput?.value || '').trim();
+        if (!url) return;
+        const fallback = trKey('search', 'Поиск');
+        applyAutoFillValue(nameInput, suggestNameFromUrl(url, fallback));
+        applyAutoFillValue(iconInput, suggestIconFromUrl(url, 64));
     }
 
     function migrateLegacyLinks(links) {
@@ -192,6 +287,35 @@
         markLocalDataUpdated(Date.now());
     }
 
+    function isLegacyDefaultSingleEngine(engine) {
+        const name = String(engine?.name || '').trim().toLowerCase();
+        const url = String(engine?.url || '').trim().toLowerCase();
+        if (name === 'unduck') {
+            return url === 'https://unduck.link?q=' || url === 'https://unduck.link?q=%s';
+        }
+        if (name !== 'kagi') return false;
+        return url === 'https://kagi.com/search?q='
+            || url === 'https://kagi.com/search?q=%s'
+            || url === 'https://kagi.com/?q='
+            || url === 'https://kagi.com/?q=%s'
+            || url === 'https://kagi.com/html/search?q='
+            || url === 'https://kagi.com/html/search?q=%s';
+    }
+
+    function migrateLegacyDefaultEngineList(engineList) {
+        if (!Array.isArray(engineList) || engineList.length !== 1) return engineList;
+        if (!isLegacyDefaultSingleEngine(engineList[0])) return engineList;
+        const migratedId = engineList[0]?.id || defaultEngines[0].id;
+        return [
+            {
+                id: migratedId,
+                name: defaultEngines[0].name,
+                url: defaultEngines[0].url,
+                icon: defaultEngines[0].icon
+            }
+        ];
+    }
+
     function loadEngines() {
         const raw = localStorage.getItem('myEngines');
         if (!raw) {
@@ -211,7 +335,11 @@
                 }))
                 .filter(engine => engine.name && engine.url && engine.icon);
             if (!normalized.length) throw new Error('empty');
-            return normalized;
+            const migrated = migrateLegacyDefaultEngineList(normalized);
+            if (migrated !== normalized) {
+                localStorage.setItem('myEngines', JSON.stringify(migrated));
+            }
+            return migrated;
         } catch (e) {
             localStorage.setItem('myEngines', JSON.stringify(defaultEngines));
             return defaultEngines.slice();
@@ -247,6 +375,7 @@
     }
 
     function setThemeBackground(theme, value) {
+        const previous = getThemeBackground(theme);
         if (theme === 'light') {
             localStorage.setItem('myBgLight', value);
             // Legacy compatibility for old reads (pre myBgLight migration).
@@ -260,7 +389,7 @@
                 deleteLocalThemeFallbackBlob(theme)
             ]).catch(() => {});
         }
-        markLocalDataUpdated(Date.now());
+        if (previous !== value) markLocalDataUpdated(Date.now());
     }
 
     function getPerformanceMode() {
@@ -274,8 +403,102 @@
     }
 
     function setDndDebugEnabled(enabled) {
-        localStorage.setItem(DND_DEBUG_STORAGE_KEY, enabled ? '1' : '0');
+        const nextValue = enabled ? '1' : '0';
+        if (localStorage.getItem(DND_DEBUG_STORAGE_KEY) === nextValue) return;
+        localStorage.setItem(DND_DEBUG_STORAGE_KEY, nextValue);
         markLocalDataUpdated(Date.now());
+    }
+
+    function normalizeBrowserProfile(raw) {
+        const value = String(raw || '').trim().toLowerCase();
+        if (value === 'chrome' || value === 'firefox' || value === 'safari') return value;
+        return 'auto';
+    }
+
+    function detectBrowserProfile() {
+        const ua = String(navigator.userAgent || '').toLowerCase();
+        const platform = String(navigator.platform || '').toLowerCase();
+
+        if (ua.includes('firefox') || ua.includes('fxios')) return 'firefox';
+        const isSafariLike = (ua.includes('safari') || platform.includes('iphone') || platform.includes('ipad') || platform.includes('mac'))
+            && !ua.includes('chrome')
+            && !ua.includes('crios')
+            && !ua.includes('chromium')
+            && !ua.includes('edg')
+            && !ua.includes('opr')
+            && !ua.includes('opera')
+            && !ua.includes('fxios');
+        if (isSafariLike) return 'safari';
+        return 'chrome';
+    }
+
+    function getStoredBrowserProfile() {
+        return normalizeBrowserProfile(localStorage.getItem(BROWSER_PROFILE_STORAGE_KEY) || 'auto');
+    }
+
+    function setStoredBrowserProfile(profile) {
+        const normalized = normalizeBrowserProfile(profile);
+        localStorage.setItem(BROWSER_PROFILE_STORAGE_KEY, normalized);
+        return normalized;
+    }
+
+    function getEffectiveBrowserProfile() {
+        const selected = getStoredBrowserProfile();
+        return selected === 'auto' ? detectBrowserProfile() : selected;
+    }
+
+    function getBrowserProfileLabel(profile) {
+        const normalized = normalizeBrowserProfile(profile);
+        if (normalized === 'firefox') return trKey('browserProfileFirefox', 'Firefox');
+        if (normalized === 'safari') return trKey('browserProfileSafari', 'Safari');
+        if (normalized === 'chrome') return trKey('browserProfileChrome', 'Chrome/Chromium');
+        return trKey('browserProfileAuto', 'Авто (определять автоматически)');
+    }
+
+    function getBrowserProfileOptions() {
+        return [
+            { value: 'auto', label: trKey('browserProfileAuto', 'Авто (определять автоматически)') },
+            { value: 'chrome', label: trKey('browserProfileChrome', 'Chrome/Chromium') },
+            { value: 'firefox', label: trKey('browserProfileFirefox', 'Firefox') },
+            { value: 'safari', label: trKey('browserProfileSafari', 'Safari') }
+        ];
+    }
+
+    function updateBrowserProfileHint() {
+        const select = document.getElementById('browserProfileSelect');
+        const hint = document.getElementById('browserProfileHint');
+        if (!select || !hint) return;
+        const selected = normalizeBrowserProfile(select.value || 'auto');
+        const localOnly = trKey(
+            'browserProfileLocalOnly',
+            'Профиль хранится только в этом браузере и не синхронизируется.'
+        );
+        if (selected === 'auto') {
+            const detected = getEffectiveBrowserProfile();
+            const base = trKey(
+                'browserProfileHintAuto',
+                'Авто определяет движок браузера: {browser}. Можно выбрать вручную, если нужно.',
+                { browser: getBrowserProfileLabel(detected) }
+            );
+            hint.textContent = `${base} ${localOnly}`;
+            return;
+        }
+        const base = selected === 'firefox'
+            ? trKey('browserProfileHintFirefox', 'Firefox: уменьшенные blur/эффекты для более стабильной отрисовки.')
+            : selected === 'safari'
+                ? trKey('browserProfileHintSafari', 'Safari: облегченные эффекты и специальный режим открытия нескольких вкладок.')
+                : trKey('browserProfileHintChrome', 'Chrome/Chromium: максимальная визуальная плавность и полные эффекты.');
+        hint.textContent = `${base} ${localOnly}`;
+    }
+
+    function initBrowserProfileSelector() {
+        const select = document.getElementById('browserProfileSelect');
+        const label = document.getElementById('browserProfileLabel');
+        if (!select) return;
+        if (label) label.textContent = trKey('browserProfile', 'Профиль браузера');
+        fillSelectOptions(select, getBrowserProfileOptions());
+        select.value = getStoredBrowserProfile();
+        updateBrowserProfileHint();
     }
 
     function openLocalBgDatabase() {
@@ -1135,8 +1358,11 @@
         if (newBgLight.startsWith('data:image/') || newBgDark.startsWith('data:image/')) return;
         setThemeBackground('light', newBgLight);
         setThemeBackground('dark', newBgDark);
+        const prevPerfMode = getPerformanceMode();
         const perfMode = document.getElementById('performanceModeSelect').value === 'eco' ? 'eco' : 'balanced';
         localStorage.setItem('airtabPerformanceMode', perfMode);
+        if (prevPerfMode !== perfMode) markLocalDataUpdated(Date.now());
+        setStoredBrowserProfile(document.getElementById('browserProfileSelect')?.value || 'auto');
         setDndDebugEnabled(!!document.getElementById('dndDebugEnabled')?.checked);
         localStorage.setItem('airtabSettingsUpdatedAt', String(Date.now()));
     }
@@ -1200,6 +1426,7 @@
             fillSelectOptions(select, refreshed);
             select.value = nextValue;
             if (hint) hint.textContent = i18n.t('interfaceLanguageHint');
+            initBrowserProfileSelector();
             i18n.translateDocument(document.body);
             updateSyncUi().catch(() => {});
         });
@@ -1261,19 +1488,24 @@
         editingEngineIndex = Number.isInteger(index) ? index : null;
         const editor = document.getElementById('engineEditor');
         const deleteBtn = document.getElementById('btnDeleteEngine');
+        const nameInput = document.getElementById('engineName');
+        const urlInput = document.getElementById('engineUrl');
+        const iconInput = document.getElementById('engineIcon');
         if (editingEngineIndex === null) {
-            document.getElementById('engineName').value = '';
-            document.getElementById('engineUrl').value = '';
-            document.getElementById('engineIcon').value = '';
+            nameInput.value = '';
+            urlInput.value = '';
+            iconInput.value = '';
             deleteBtn.style.display = 'none';
         } else {
             const engine = engines[editingEngineIndex];
             if (!engine) return;
-            document.getElementById('engineName').value = engine.name;
-            document.getElementById('engineUrl').value = engine.url;
-            document.getElementById('engineIcon').value = engine.icon;
+            nameInput.value = engine.name;
+            urlInput.value = engine.url;
+            iconInput.value = engine.icon;
             deleteBtn.style.display = 'inline-block';
         }
+        nameInput.dataset.autoValue = '';
+        iconInput.dataset.autoValue = '';
         editor.classList.remove('hidden');
     }
 
@@ -1295,6 +1527,9 @@
         if (light.startsWith('#')) document.getElementById('bgColorPickerLight').value = light.slice(0, 7);
         if (dark.startsWith('#')) document.getElementById('bgColorPickerDark').value = dark.slice(0, 7);
         document.getElementById('performanceModeSelect').value = getPerformanceMode();
+        const browserProfileSelect = document.getElementById('browserProfileSelect');
+        if (browserProfileSelect) browserProfileSelect.value = getStoredBrowserProfile();
+        updateBrowserProfileHint();
         document.getElementById('dndDebugEnabled').checked = getDndDebugEnabled();
         themeDraftDirty = false;
     }
@@ -2418,15 +2653,28 @@
 
     document.getElementById('btnAddEngine').addEventListener('click', () => openEngineEditor(null));
     document.getElementById('btnCancelEngine').addEventListener('click', closeEngineEditor);
+    const engineNameInput = document.getElementById('engineName');
+    const engineUrlInput = document.getElementById('engineUrl');
+    const engineIconInput = document.getElementById('engineIcon');
+    engineUrlInput.addEventListener('input', maybeAutofillEngineFieldsFromUrl);
+    engineNameInput.addEventListener('input', () => markAutoFillValueAsManual(engineNameInput));
+    engineIconInput.addEventListener('input', () => markAutoFillValueAsManual(engineIconInput));
     document.getElementById('btnSaveEngine').addEventListener('click', () => {
-        const name = document.getElementById('engineName').value.trim();
-        const url = document.getElementById('engineUrl').value.trim();
-        const icon = document.getElementById('engineIcon').value.trim();
-        if (!name || !url || !icon) {
-            showStatus(trKey('fillEngineFields', 'Заполните название, URL и иконку.'), 'error');
+        let name = document.getElementById('engineName').value.trim();
+        const url = normalizeUrl(document.getElementById('engineUrl').value.trim());
+        let icon = document.getElementById('engineIcon').value.trim();
+        if (!url) {
+            showStatus(trKey('fillEngineUrlField', 'Введите URL поисковика.'), 'error');
             return;
         }
-        const engine = { id: Date.now(), name, url, icon };
+        if (!name) name = suggestNameFromUrl(url, trKey('search', 'Поиск'));
+        if (!icon) icon = suggestIconFromUrl(url, 64);
+        if (!name || !icon) {
+            showStatus(trKey('fillEngineUrlField', 'Введите URL поисковика.'), 'error');
+            return;
+        }
+        const existingId = editingEngineIndex === null ? Date.now() : (engines[editingEngineIndex]?.id || Date.now());
+        const engine = { id: existingId, name, url, icon };
         if (editingEngineIndex === null) engines.push(engine);
         else engines[editingEngineIndex] = engine;
         saveEngines();
@@ -2463,6 +2711,10 @@
     document.getElementById('performanceModeSelect').addEventListener('change', () => {
         themeDraftDirty = true;
     });
+    document.getElementById('browserProfileSelect')?.addEventListener('change', () => {
+        themeDraftDirty = true;
+        updateBrowserProfileHint();
+    });
     document.getElementById('dndDebugEnabled').addEventListener('change', () => {
         themeDraftDirty = true;
     });
@@ -2482,8 +2734,11 @@
             setThemeBackground('dark', newBgDark);
             await persistPendingLocalThemeBackground('light', newBgLight);
             await persistPendingLocalThemeBackground('dark', newBgDark);
+            const prevPerfMode = getPerformanceMode();
             const perfMode = document.getElementById('performanceModeSelect').value === 'eco' ? 'eco' : 'balanced';
             localStorage.setItem('airtabPerformanceMode', perfMode);
+            if (prevPerfMode !== perfMode) markLocalDataUpdated(Date.now());
+            setStoredBrowserProfile(document.getElementById('browserProfileSelect')?.value || 'auto');
             setDndDebugEnabled(!!document.getElementById('dndDebugEnabled')?.checked);
             const verifyLight = getThemeBackground('light');
             const verifyDark = getThemeBackground('dark');
@@ -2664,6 +2919,7 @@
     });
 
     initUiLanguageSelector();
+    initBrowserProfileSelector();
     setTab(localStorage.getItem('settingsTab') || 'search');
     initThemeInputs();
     renderEngineList();

@@ -976,6 +976,22 @@
         }
 
         .card-container { display: flex; flex-direction: column; align-items: center; width: 90px; position: relative; }
+        .lazy-load-card { pointer-events: none; user-select: none; opacity: 0.9; }
+        .lazy-load-card .card-box {
+            border-style: dashed;
+            border-width: 2px;
+            color: color-mix(in srgb, var(--text-color) 64%, transparent);
+            font-size: 26px;
+            font-weight: 600;
+            line-height: 1;
+        }
+        .lazy-load-card .card-text {
+            max-width: 88px;
+            text-align: center;
+            white-space: normal;
+            line-height: 1.2;
+            font-size: 11px;
+        }
         .card-box-wrap { position: relative; transition: transform var(--motion-fast); }
         .card-box-wrap:hover { transform: translateY(-3px); }
         .card-box {
@@ -2045,6 +2061,93 @@
             animation: none !important;
         }
 
+        body.perf-memory .overlay {
+            opacity: calc(var(--overlay-opacity) * 0.55);
+        }
+        body.perf-memory .search-wrapper,
+        body.perf-memory .spaces-nav,
+        body.perf-memory .sidebar-section,
+        body.perf-memory .engine-list,
+        body.perf-memory .modal,
+        body.perf-memory .card-box,
+        body.perf-memory .compact-card,
+        body.perf-memory .tree-folder {
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+        }
+        body.perf-memory .card-box,
+        body.perf-memory .compact-card,
+        body.perf-memory .sidebar-section,
+        body.perf-memory .spaces-nav,
+        body.perf-memory .settings-btn {
+            box-shadow: 0 5px 12px rgba(0, 0, 0, 0.12) !important;
+        }
+        body.perf-memory .grid .card-container,
+        body.perf-memory .folder-grid .card-container,
+        body.perf-memory .sidebar .compact-wrapper,
+        body.perf-memory .folder-grid .compact-wrapper,
+        body.perf-memory .sidebar .tree-folder {
+            contain: layout paint style;
+            content-visibility: auto;
+        }
+        body.perf-memory .grid .card-container,
+        body.perf-memory .folder-grid .card-container {
+            contain-intrinsic-size: 96px 128px;
+        }
+        body.perf-memory .sidebar .compact-wrapper,
+        body.perf-memory .folder-grid .compact-wrapper,
+        body.perf-memory .sidebar .tree-folder {
+            contain-intrinsic-size: 220px 46px;
+        }
+
+        html[data-airtab-browser="firefox"] {
+            --motion-fast: 140ms cubic-bezier(0.2, 0, 0, 1);
+            --motion-med: 210ms cubic-bezier(0.2, 0, 0, 1);
+            --motion-slow: 320ms cubic-bezier(0.2, 0, 0, 1);
+            --overlay-opacity: 0.22;
+        }
+        html[data-airtab-browser="safari"] {
+            --motion-fast: 120ms cubic-bezier(0.2, 0, 0, 1);
+            --motion-med: 180ms cubic-bezier(0.2, 0, 0, 1);
+            --motion-slow: 280ms cubic-bezier(0.2, 0, 0, 1);
+            --overlay-opacity: 0.18;
+        }
+        html[data-airtab-browser="firefox"] .search-wrapper,
+        html[data-airtab-browser="firefox"] .spaces-nav,
+        html[data-airtab-browser="firefox"] .sidebar-section,
+        html[data-airtab-browser="firefox"] .engine-list,
+        html[data-airtab-browser="firefox"] .modal,
+        html[data-airtab-browser="firefox"] .card-box,
+        html[data-airtab-browser="firefox"] .compact-card,
+        html[data-airtab-browser="firefox"] .tree-folder,
+        html[data-airtab-browser="safari"] .search-wrapper,
+        html[data-airtab-browser="safari"] .spaces-nav,
+        html[data-airtab-browser="safari"] .sidebar-section,
+        html[data-airtab-browser="safari"] .engine-list,
+        html[data-airtab-browser="safari"] .modal,
+        html[data-airtab-browser="safari"] .card-box,
+        html[data-airtab-browser="safari"] .compact-card,
+        html[data-airtab-browser="safari"] .tree-folder {
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+        }
+        html[data-airtab-browser="firefox"] .container.space-switch,
+        html[data-airtab-browser="firefox"] .container.space-switch-eco,
+        html[data-airtab-browser="firefox"] .container.space-switch-left .sidebar,
+        html[data-airtab-browser="firefox"] .container.space-switch-left .main-column,
+        html[data-airtab-browser="firefox"] .container.space-switch-right .sidebar,
+        html[data-airtab-browser="firefox"] .container.space-switch-right .main-column {
+            animation-duration: 150ms !important;
+        }
+        html[data-airtab-browser="safari"] .container.space-switch,
+        html[data-airtab-browser="safari"] .container.space-switch-eco,
+        html[data-airtab-browser="safari"] .container.space-switch-left .sidebar,
+        html[data-airtab-browser="safari"] .container.space-switch-left .main-column,
+        html[data-airtab-browser="safari"] .container.space-switch-right .sidebar,
+        html[data-airtab-browser="safari"] .container.space-switch-right .main-column {
+            animation-duration: 120ms !important;
+        }
+
         @media (max-width: 700px) {
             .search-wrapper { max-width: 100%; }
         }
@@ -2200,7 +2303,7 @@
                 <form class="search-wrapper" id="searchForm">
                     <div class="engine-dropdown-container">
                         <button type="button" class="engine-btn" id="currentEngineBtn" aria-label="Выбрать поисковую систему">
-                            <img id="currentEngineIcon" src="https://kagi.com/favicon.ico" alt="Kagi">
+                            <img id="currentEngineIcon" src="https://duckduckgo.com/favicon.ico" alt="DuckDuckGo">
                         </button>
                         <div class="engine-list" id="engineListMenu"></div>
                     </div>

@@ -26,11 +26,74 @@
     const defaultLinks = [];
 
     const defaultEngines = [
-        { id: 1, name: "Kagi", url: "https://kagi.com/search?q=", icon: "https://kagi.com/favicon.ico" }
+        { id: 1, name: "DuckDuckGo", url: "https://duckduckgo.com/?q=%s", icon: "https://duckduckgo.com/favicon.ico" }
     ];
 
-    let engines = JSON.parse(localStorage.getItem('myEngines')) || defaultEngines;
+    function isLegacyDefaultSingleEngine(engine) {
+        const name = String(engine?.name || '').trim().toLowerCase();
+        const url = String(engine?.url || '').trim().toLowerCase();
+        if (name === 'unduck') {
+            return url === 'https://unduck.link?q=' || url === 'https://unduck.link?q=%s';
+        }
+        if (name !== 'kagi') return false;
+        return url === 'https://kagi.com/search?q='
+            || url === 'https://kagi.com/search?q=%s'
+            || url === 'https://kagi.com/?q='
+            || url === 'https://kagi.com/?q=%s'
+            || url === 'https://kagi.com/html/search?q='
+            || url === 'https://kagi.com/html/search?q=%s';
+    }
+
+    function migrateLegacyDefaultEngineList(engineList) {
+        if (!Array.isArray(engineList) || engineList.length !== 1) return engineList;
+        if (!isLegacyDefaultSingleEngine(engineList[0])) return engineList;
+        const migratedId = engineList[0]?.id || defaultEngines[0].id;
+        return [
+            {
+                id: migratedId,
+                name: defaultEngines[0].name,
+                url: defaultEngines[0].url,
+                icon: defaultEngines[0].icon
+            }
+        ];
+    }
+
+    function loadEnginesFromStorageForInit() {
+        const raw = localStorage.getItem('myEngines');
+        if (!raw) {
+            localStorage.setItem('myEngines', JSON.stringify(defaultEngines));
+            return defaultEngines.slice();
+        }
+        try {
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed) || !parsed.length) throw new Error('empty');
+            const normalized = parsed
+                .filter(Boolean)
+                .map((engine, i) => ({
+                    id: engine.id || Date.now() + i,
+                    name: (engine.name || `Engine ${i + 1}`).trim(),
+                    url: (engine.url || '').trim(),
+                    icon: (engine.icon || '').trim()
+                }))
+                .filter(engine => engine.name && engine.url && engine.icon);
+            if (!normalized.length) throw new Error('empty');
+            const migrated = migrateLegacyDefaultEngineList(normalized);
+            if (migrated !== normalized) {
+                localStorage.setItem('myEngines', JSON.stringify(migrated));
+            }
+            return migrated;
+        } catch (error) {
+            localStorage.setItem('myEngines', JSON.stringify(defaultEngines));
+            return defaultEngines.slice();
+        }
+    }
+
+    let engines = loadEnginesFromStorageForInit();
     let activeEngineId = localStorage.getItem('myActiveEngine') || engines[0]?.id;
+    if (engines.length && !engines.some(engine => String(engine.id) === String(activeEngineId))) {
+        activeEngineId = engines[0].id;
+        localStorage.setItem('myActiveEngine', String(activeEngineId));
+    }
 
     const defaultBgLight = "#f2f2f7";
     const defaultBgDark = "#2c2c2e";
@@ -55,14 +118,63 @@
     const DROPBOX_OAUTH_TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token';
     const DROPBOX_API_RPC_BASE = 'https://api.dropboxapi.com/2';
     const DROPBOX_API_CONTENT_BASE = 'https://content.dropboxapi.com/2';
-    const AUTO_SYNC_PUSH_DEBOUNCE_MS = 1400;
-    const AUTO_SYNC_PULL_DEBOUNCE_MS = 700;
-    const AUTO_SYNC_PULL_MIN_INTERVAL_MS = 4500;
-    const FAVICON_SIZE_GRID = 64;
-    const FAVICON_SIZE_COMPACT = 32;
+    const BASE_AUTO_SYNC_PUSH_DEBOUNCE_MS = 1400;
+    const BASE_AUTO_SYNC_PULL_DEBOUNCE_MS = 700;
+    const BASE_AUTO_SYNC_PULL_MIN_INTERVAL_MS = 4500;
+    const FAVICON_SIZE_GRID = 48;
+    const FAVICON_SIZE_COMPACT = 24;
     const FAVICON_FALLBACK_ICON = 'icons/icon-32.png';
+    const MEMORY_LAZY_GRID_INITIAL_COUNT = 72;
+    const MEMORY_LAZY_GRID_BATCH_COUNT = 40;
+    const MEMORY_LAZY_GRID_SCROLL_THRESHOLD_PX = 680;
     const HIDE_RIGHT_SIDEBAR_QUERY = '(min-width: 901px) and (max-width: 1100px)';
     const POPUP_PERMISSION_STATE_KEY = 'airtabPopupPermissionState';
+    const BROWSER_PROFILE_STORAGE_KEY = 'airtabBrowserProfile';
+    const KAGI_SIGNIN_HINT_SHOWN_KEY = 'airtabKagiSigninHintShown';
+    const HOST_DISPLAY_NAME_MAP = Object.freeze({
+        'duckduckgo.com': 'DuckDuckGo',
+        'google.com': 'Google',
+        'bing.com': 'Bing',
+        'yandex.com': 'Yandex',
+        'yandex.ru': 'Yandex',
+        'kagi.com': 'Kagi',
+        'youtube.com': 'YouTube',
+        'wikipedia.org': 'Wikipedia',
+        'github.com': 'GitHub',
+        'reddit.com': 'Reddit',
+        'ecosia.org': 'Ecosia',
+        'startpage.com': 'Startpage',
+        'brave.com': 'Brave'
+    });
+    const BROWSER_PROFILE_TUNING = Object.freeze({
+        chrome: Object.freeze({
+            autoSyncPushDebounceMs: BASE_AUTO_SYNC_PUSH_DEBOUNCE_MS,
+            autoSyncPullDebounceMs: BASE_AUTO_SYNC_PULL_DEBOUNCE_MS,
+            autoSyncPullMinIntervalMs: BASE_AUTO_SYNC_PULL_MIN_INTERVAL_MS,
+            wheelSwitchCooldownMs: 500,
+            touchSwipeThresholdPx: 60,
+            reservePopupTabsForBatchOpen: false,
+            allowChromiumFaviconApi: true
+        }),
+        firefox: Object.freeze({
+            autoSyncPushDebounceMs: 1650,
+            autoSyncPullDebounceMs: 850,
+            autoSyncPullMinIntervalMs: 5200,
+            wheelSwitchCooldownMs: 600,
+            touchSwipeThresholdPx: 64,
+            reservePopupTabsForBatchOpen: false,
+            allowChromiumFaviconApi: false
+        }),
+        safari: Object.freeze({
+            autoSyncPushDebounceMs: 1900,
+            autoSyncPullDebounceMs: 1050,
+            autoSyncPullMinIntervalMs: 6500,
+            wheelSwitchCooldownMs: 700,
+            touchSwipeThresholdPx: 72,
+            reservePopupTabsForBatchOpen: true,
+            allowChromiumFaviconApi: false
+        })
+    });
 
     let performanceMode = localStorage.getItem('airtabPerformanceMode') || 'balanced';
     if (performanceMode !== 'eco') performanceMode = 'balanced';
@@ -117,6 +229,15 @@
     let autoSyncLastPullAt = 0;
     let dropboxTokenStateCacheLoaded = false;
     let dropboxTokenStateCache = null;
+    let lazyGridExpandRaf = 0;
+    let lazyGridRenderState = {
+        active: false,
+        spaceId: '',
+        links: [],
+        renderedCount: 0,
+        itemActionsLabel: '',
+        addLabel: ''
+    };
 
     function invalidateDropboxTokenCache() {
         dropboxTokenStateCacheLoaded = false;
@@ -151,6 +272,55 @@
     function normalizeFolderView(value) {
         return value === 'grid' ? 'grid' : 'list';
     }
+
+    function normalizeBrowserProfile(raw) {
+        const value = String(raw || '').trim().toLowerCase();
+        if (value === 'chrome' || value === 'firefox' || value === 'safari') return value;
+        return 'auto';
+    }
+
+    function detectBrowserProfile() {
+        const ua = String(navigator.userAgent || '').toLowerCase();
+        const platform = String(navigator.platform || '').toLowerCase();
+        if (ua.includes('firefox') || ua.includes('fxios')) return 'firefox';
+        const isSafariLike = (ua.includes('safari') || platform.includes('iphone') || platform.includes('ipad') || platform.includes('mac'))
+            && !ua.includes('chrome')
+            && !ua.includes('crios')
+            && !ua.includes('chromium')
+            && !ua.includes('edg')
+            && !ua.includes('opr')
+            && !ua.includes('opera')
+            && !ua.includes('fxios');
+        if (isSafariLike) return 'safari';
+        return 'chrome';
+    }
+
+    function getStoredBrowserProfile() {
+        return normalizeBrowserProfile(localStorage.getItem(BROWSER_PROFILE_STORAGE_KEY) || 'auto');
+    }
+
+    function resolveBrowserProfile() {
+        const selected = getStoredBrowserProfile();
+        return selected === 'auto' ? detectBrowserProfile() : selected;
+    }
+
+    function getBrowserProfileTuning(profile = browserProfile) {
+        const normalized = normalizeBrowserProfile(profile);
+        const effective = normalized === 'auto' ? detectBrowserProfile() : normalized;
+        return BROWSER_PROFILE_TUNING[effective] || BROWSER_PROFILE_TUNING.chrome;
+    }
+
+    let browserProfile = resolveBrowserProfile();
+
+    function applyBrowserProfileClass() {
+        const root = document.documentElement;
+        const tuning = getBrowserProfileTuning(browserProfile);
+        root.setAttribute('data-airtab-browser', browserProfile);
+        root.classList.toggle('airtab-browser-reserve-popups', !!tuning.reservePopupTabsForBatchOpen);
+        root.classList.toggle('airtab-browser-no-chromium-favicon', !tuning.allowChromiumFaviconApi);
+    }
+
+    applyBrowserProfileClass();
 
     function isSelectionModifierActive(event = null) {
         const keyboardModifier = !!(event && (event.metaKey || event.ctrlKey));
@@ -198,6 +368,85 @@
 
     function getHostname(url) {
         try { return new URL(url).hostname; } catch (e) { return ''; }
+    }
+
+    function getHostnameDisplayName(hostname, fallback = '') {
+        const host = String(hostname || '').trim().toLowerCase()
+            .replace(/^www\./, '')
+            .replace(/^m\./, '');
+        if (!host) return fallback;
+        const directPreset = HOST_DISPLAY_NAME_MAP[host];
+        if (directPreset) return directPreset;
+        const segments = host.split('.').filter(Boolean);
+        if (segments.length >= 2) {
+            const registrable = segments.slice(-2).join('.');
+            const preset = HOST_DISPLAY_NAME_MAP[registrable];
+            if (preset) return preset;
+        }
+        const seed = segments[0] || '';
+        const cleaned = seed.replace(/^xn--/, '').replace(/[-_]+/g, ' ').trim();
+        if (!cleaned) return fallback;
+        return cleaned
+            .split(/\s+/)
+            .filter(Boolean)
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(' ');
+    }
+
+    function suggestNameFromUrl(rawUrl, fallback = '') {
+        const cleanUrl = normalizeUrl(rawUrl || '');
+        if (!cleanUrl) return fallback;
+        const hostname = getHostname(cleanUrl);
+        return getHostnameDisplayName(hostname, fallback) || fallback;
+    }
+
+    function suggestIconFromUrl(rawUrl, size = FAVICON_SIZE_GRID) {
+        const cleanUrl = normalizeUrl(rawUrl || '');
+        if (!cleanUrl) return '';
+        const hostname = getHostname(cleanUrl);
+        return getRemoteFaviconUrl(hostname, size);
+    }
+
+    function applyAutoFillValue(inputEl, nextValue) {
+        if (!inputEl) return;
+        const value = String(nextValue || '').trim();
+        if (!value) return;
+        const current = String(inputEl.value || '').trim();
+        const autoValue = String(inputEl.dataset.autoValue || '').trim();
+        if (!current || (autoValue && current === autoValue)) {
+            inputEl.value = value;
+            inputEl.dataset.autoValue = value;
+        }
+    }
+
+    function markAutoFillValueAsManual(inputEl) {
+        if (!inputEl) return;
+        const autoValue = String(inputEl.dataset.autoValue || '').trim();
+        if (!autoValue) return;
+        const current = String(inputEl.value || '').trim();
+        if (current !== autoValue) {
+            inputEl.dataset.autoValue = '';
+        }
+    }
+
+    function maybeAutofillLinkNameFromUrl() {
+        const urlInput = document.getElementById('linkUrl');
+        const nameInput = document.getElementById('linkName');
+        const url = String(urlInput?.value || '').trim();
+        if (!url) return;
+        const fallback = trKey('siteNamePlaceholder', 'Название сайта');
+        applyAutoFillValue(nameInput, suggestNameFromUrl(url, fallback));
+    }
+
+    function maybeAutofillEngineFieldsFromUrl() {
+        const urlInput = document.getElementById('engineUrl');
+        const nameInput = document.getElementById('engineName');
+        const iconInput = document.getElementById('engineIcon');
+        const url = String(urlInput?.value || '').trim();
+        if (!url) return;
+        const fallback = trKey('search', 'Поиск');
+        applyAutoFillValue(nameInput, suggestNameFromUrl(url, fallback));
+        applyAutoFillValue(iconInput, suggestIconFromUrl(url, FAVICON_SIZE_GRID));
     }
 
     function getLocalBgToken(theme) {
@@ -522,6 +771,7 @@
     function getChromiumFaviconUrl(pageUrl, size = FAVICON_SIZE_GRID) {
         const cleanUrl = String(pageUrl || '').trim();
         if (!cleanUrl || !/^https?:\/\//i.test(cleanUrl)) return '';
+        if (!getBrowserProfileTuning().allowChromiumFaviconApi) return '';
         try {
             if (!extensionApi?.runtime?.getURL) return '';
             const params = new URLSearchParams({
@@ -1338,13 +1588,11 @@
             localStorage.setItem('airtabSettingsUpdatedAt', String(Date.now()));
 
             data = loadData();
-            try {
-                engines = JSON.parse(localStorage.getItem('myEngines')) || defaultEngines;
-            } catch (error) {
-                engines = defaultEngines;
-            }
+            engines = loadEnginesFromStorageForInit();
             activeEngineId = localStorage.getItem('myActiveEngine') || engines[0]?.id;
             performanceMode = localStorage.getItem('airtabPerformanceMode') === 'eco' ? 'eco' : 'balanced';
+            browserProfile = resolveBrowserProfile();
+            applyBrowserProfileClass();
             dndDebugEnabled = readDndDebugEnabled();
             applyDndDebugVisibility();
 
@@ -1469,8 +1717,9 @@
     function scheduleAutoSyncPull(options = {}) {
         const immediate = options?.immediate === true;
         const force = options?.force === true;
+        const tuning = getBrowserProfileTuning();
         if (document.hidden) return;
-        if (!force && autoSyncLastPullAt && (Date.now() - autoSyncLastPullAt) < AUTO_SYNC_PULL_MIN_INTERVAL_MS) return;
+        if (!force && autoSyncLastPullAt && (Date.now() - autoSyncLastPullAt) < tuning.autoSyncPullMinIntervalMs) return;
         if (immediate) {
             if (autoSyncPullTimer) {
                 clearTimeout(autoSyncPullTimer);
@@ -1483,12 +1732,13 @@
         autoSyncPullTimer = window.setTimeout(() => {
             autoSyncPullTimer = 0;
             runAutoSyncPull(force).catch(() => {});
-        }, AUTO_SYNC_PULL_DEBOUNCE_MS);
+        }, tuning.autoSyncPullDebounceMs);
     }
 
     async function runAutoSyncPull(force = false) {
+        const tuning = getBrowserProfileTuning();
         if (document.hidden) return;
-        if (!force && autoSyncLastPullAt && (Date.now() - autoSyncLastPullAt) < AUTO_SYNC_PULL_MIN_INTERVAL_MS) return;
+        if (!force && autoSyncLastPullAt && (Date.now() - autoSyncLastPullAt) < tuning.autoSyncPullMinIntervalMs) return;
         if (autoSyncPullRunning) {
             autoSyncPullQueued = true;
             return;
@@ -1543,6 +1793,7 @@
 
     function scheduleAutoSyncPush(immediate = false) {
         if (autoSyncSuppressPush) return;
+        const tuning = getBrowserProfileTuning();
         if (immediate) {
             if (autoSyncPushTimer) {
                 clearTimeout(autoSyncPushTimer);
@@ -1555,7 +1806,7 @@
         autoSyncPushTimer = window.setTimeout(() => {
             autoSyncPushTimer = 0;
             runAutoSyncPush().catch(() => {});
-        }, AUTO_SYNC_PUSH_DEBOUNCE_MS);
+        }, tuning.autoSyncPushDebounceMs);
     }
 
     async function runAutoSyncPush() {
@@ -1597,6 +1848,35 @@
 
     function getActiveSpace() {
         return data.spaces.find(s => s.id === data.activeSpaceId) || data.spaces[0];
+    }
+
+    function countItemsForMemoryProfile(entries) {
+        if (!Array.isArray(entries) || !entries.length) return 0;
+        let total = 0;
+        entries.forEach((entry) => {
+            if (!entry || typeof entry !== 'object') return;
+            total += 1;
+            if (entry.type === 'folder' && Array.isArray(entry.items) && entry.items.length) {
+                total += countItemsForMemoryProfile(entry.items);
+            }
+        });
+        return total;
+    }
+
+    function shouldEnableAdaptiveMemoryMode(space = getActiveSpace()) {
+        const itemCount = countItemsForMemoryProfile(space?.items || []);
+        const coarsePointer = !!coarsePointerQuery?.matches;
+        const deviceMemory = Number(globalThis.navigator?.deviceMemory || 0);
+        const lowMemoryDevice = Number.isFinite(deviceMemory) && deviceMemory > 0 && deviceMemory <= 8;
+        const heavyByCount = itemCount >= 140;
+        const mobileHeavy = coarsePointer && itemCount >= 90;
+        return lowMemoryDevice || heavyByCount || mobileHeavy;
+    }
+
+    function applyAdaptiveMemoryMode(space = getActiveSpace()) {
+        const enabled = shouldEnableAdaptiveMemoryMode(space);
+        document.body.classList.toggle('perf-memory', enabled);
+        document.documentElement.setAttribute('data-airtab-memory', enabled ? 'adaptive' : 'normal');
     }
 
     function applyCurrentTheme() {
@@ -1654,13 +1934,14 @@
             return;
         }
         if (key === 'myEngines' || key === 'myActiveEngine') {
-            try {
-                engines = JSON.parse(localStorage.getItem('myEngines')) || defaultEngines;
-            } catch (err) {
-                engines = defaultEngines;
-            }
+            engines = loadEnginesFromStorageForInit();
             activeEngineId = localStorage.getItem('myActiveEngine') || engines[0]?.id;
             renderSearchDropdown();
+            return;
+        }
+        if (key === BROWSER_PROFILE_STORAGE_KEY) {
+            browserProfile = resolveBrowserProfile();
+            applyBrowserProfileClass();
             return;
         }
         if (key === 'airtabPerformanceMode') {
@@ -2048,44 +2329,146 @@
         updateSelectionUI();
     }
 
-    function renderItems() {
-        const grid = document.getElementById('grid');
-        const cards = [];
-        const space = getActiveSpace();
-        const items = space.items || [];
-        const itemActionsLabel = trKey('itemActions', 'Действия элемента');
-        const addLabel = trKey('add', 'Добавить');
-
-        items.forEach((item) => {
-            const isSelected = selectedIds.has(item.id);
-            const selectedClass = isSelected ? 'selected' : '';
-            if (item.type !== 'link') return;
-            if (item.isCompact) return;
-
-            const iconAttrs = buildFaviconImgAttrs(item.url, item.customIcon, FAVICON_SIZE_GRID);
-            cards.push(`
-                <div class="card-container drag-item ${selectedClass}" draggable="true" data-id="${item.id}" data-type="link">
-                    <div class="select-indicator"></div>
-                    <div class="card-box-wrap">
-                        <button type="button" class="edit-btn" data-id="${item.id}" aria-label="${itemActionsLabel}">⋮</button>
-                        <a href="${item.url}" class="card-box" draggable="false">
-                            <img ${iconAttrs} alt="" loading="lazy" decoding="async">
-                        </a>
-                    </div>
-                    <div class="card-text">${item.name}</div>
+    function buildMainGridCardHtml(item, itemActionsLabel) {
+        const isSelected = selectedIds.has(item.id);
+        const selectedClass = isSelected ? 'selected' : '';
+        const iconAttrs = buildFaviconImgAttrs(item.url, item.customIcon, FAVICON_SIZE_GRID);
+        return `
+            <div class="card-container drag-item ${selectedClass}" draggable="true" data-id="${item.id}" data-type="link">
+                <div class="select-indicator"></div>
+                <div class="card-box-wrap">
+                    <button type="button" class="edit-btn" data-id="${item.id}" aria-label="${itemActionsLabel}">⋮</button>
+                    <a href="${item.url}" class="card-box" draggable="false">
+                        <img ${iconAttrs} alt="" loading="lazy" decoding="async">
+                    </a>
                 </div>
-            `);
-        });
+                <div class="card-text">${item.name}</div>
+            </div>
+        `;
+    }
 
-        cards.push(`
+    function buildMainGridAddCardHtml(addLabel) {
+        return `
             <div class="card-container">
                 <div class="card-box-wrap">
                     <div class="card-box add-btn-box" data-add="square" data-force-type="link">+</div>
                 </div>
                 <div class="card-text">${addLabel}</div>
             </div>
-        `);
+        `;
+    }
+
+    function buildMainGridLazyLoadCardHtml(remaining) {
+        const moreLabel = trKey(
+            'lazyGridLoadMore',
+            'Прокрутите вниз, чтобы загрузить ещё {count}',
+            { count: remaining }
+        );
+        return `
+            <div class="card-container lazy-load-card" data-role="grid-load-more">
+                <div class="card-box-wrap">
+                    <div class="card-box lazy-load-box">⋯</div>
+                </div>
+                <div class="card-text">${moreLabel}</div>
+            </div>
+        `;
+    }
+
+    function resetLazyGridRenderState() {
+        if (lazyGridExpandRaf) {
+            cancelAnimationFrame(lazyGridExpandRaf);
+            lazyGridExpandRaf = 0;
+        }
+        lazyGridRenderState = {
+            active: false,
+            spaceId: '',
+            links: [],
+            renderedCount: 0,
+            itemActionsLabel: '',
+            addLabel: ''
+        };
+    }
+
+    function isLazyGridRenderEnabled(space, nonCompactLinks) {
+        if (!space?.id) return false;
+        if (!Array.isArray(nonCompactLinks) || nonCompactLinks.length <= MEMORY_LAZY_GRID_INITIAL_COUNT) return false;
+        return document.body.classList.contains('perf-memory');
+    }
+
+    function renderLazyGridSlice() {
+        if (!lazyGridRenderState.active) return;
+        const grid = document.getElementById('grid');
+        if (!grid) return;
+        const state = lazyGridRenderState;
+        const visibleCount = Math.min(state.renderedCount, state.links.length);
+        const visibleLinks = state.links.slice(0, visibleCount);
+        const cards = visibleLinks.map((item) => buildMainGridCardHtml(item, state.itemActionsLabel));
+        const remaining = state.links.length - visibleCount;
+        if (remaining > 0) cards.push(buildMainGridLazyLoadCardHtml(remaining));
+        else cards.push(buildMainGridAddCardHtml(state.addLabel));
         replaceWithFragment(grid, cards.join(''));
+    }
+
+    function maybeExpandLazyGridRender() {
+        if (!lazyGridRenderState.active) return;
+        const container = document.querySelector('.container');
+        if (!container) return;
+        const state = lazyGridRenderState;
+        if (state.renderedCount >= state.links.length) return;
+        const distanceToBottom = container.scrollHeight - (container.scrollTop + container.clientHeight);
+        if (distanceToBottom > MEMORY_LAZY_GRID_SCROLL_THRESHOLD_PX) return;
+        state.renderedCount = Math.min(state.links.length, state.renderedCount + MEMORY_LAZY_GRID_BATCH_COUNT);
+        renderLazyGridSlice();
+        if (state.renderedCount < state.links.length) {
+            const nextDistance = container.scrollHeight - (container.scrollTop + container.clientHeight);
+            if (nextDistance <= MEMORY_LAZY_GRID_SCROLL_THRESHOLD_PX) {
+                scheduleLazyGridExpandCheck();
+            }
+        }
+    }
+
+    function scheduleLazyGridExpandCheck() {
+        if (!lazyGridRenderState.active || lazyGridExpandRaf) return;
+        lazyGridExpandRaf = requestAnimationFrame(() => {
+            lazyGridExpandRaf = 0;
+            maybeExpandLazyGridRender();
+        });
+    }
+
+    function renderItems() {
+        const grid = document.getElementById('grid');
+        const space = getActiveSpace();
+        applyAdaptiveMemoryMode(space);
+        const items = space.items || [];
+        const itemActionsLabel = trKey('itemActions', 'Действия элемента');
+        const addLabel = trKey('add', 'Добавить');
+        const nonCompactLinks = items.filter((item) => item.type === 'link' && !item.isCompact);
+        const lazyEnabled = isLazyGridRenderEnabled(space, nonCompactLinks);
+
+        if (lazyEnabled) {
+            const keepRenderedCount = lazyGridRenderState.active && lazyGridRenderState.spaceId === space.id
+                ? lazyGridRenderState.renderedCount
+                : 0;
+            const initialCount = Math.min(
+                nonCompactLinks.length,
+                Math.max(MEMORY_LAZY_GRID_INITIAL_COUNT, keepRenderedCount)
+            );
+            lazyGridRenderState = {
+                active: true,
+                spaceId: space.id,
+                links: nonCompactLinks,
+                renderedCount: initialCount,
+                itemActionsLabel,
+                addLabel
+            };
+            renderLazyGridSlice();
+            scheduleLazyGridExpandCheck();
+        } else {
+            resetLazyGridRenderState();
+            const cards = nonCompactLinks.map((item) => buildMainGridCardHtml(item, itemActionsLabel));
+            cards.push(buildMainGridAddCardHtml(addLabel));
+            replaceWithFragment(grid, cards.join(''));
+        }
         renderSidebars();
     }
 
@@ -2199,6 +2582,7 @@
     function renderFolderItems() {
         const folderGrid = document.getElementById('folderGrid');
         folderGrid.textContent = '';
+        applyAdaptiveMemoryMode(getActiveSpace());
         const folderCards = [];
         const itemActionsLabel = trKey('itemActions', 'Действия элемента');
 
@@ -2263,6 +2647,73 @@
             `);
         });
         replaceWithFragment(menu, menuItems.join(''));
+    }
+
+    function isKagiHost(hostname) {
+        const host = String(hostname || '').toLowerCase();
+        return host === 'kagi.com' || host.endsWith('.kagi.com');
+    }
+
+    function buildSearchTargetUrl(activeEngine, query) {
+        const rawQuery = String(query || '').trim();
+        if (!rawQuery) return '';
+        const rawEngineUrl = String(activeEngine?.url || '').trim();
+        if (!rawEngineUrl) return '';
+        const encodedQuery = encodeURIComponent(rawQuery);
+
+        if (rawEngineUrl.includes('%s')) {
+            return rawEngineUrl.replace(/%s/g, encodedQuery);
+        }
+        if (/\{query\}/i.test(rawEngineUrl)) {
+            return rawEngineUrl.replace(/\{query\}/gi, encodedQuery);
+        }
+
+        if (/([?&][^=&#\s]+)=\s*$/i.test(rawEngineUrl)) {
+            return `${rawEngineUrl}${encodedQuery}`;
+        }
+
+        try {
+            const parsed = new URL(rawEngineUrl);
+            const knownQueryKeys = ['q', 'query', 'search_query', 'searchterm', 'p'];
+            const existingKey = knownQueryKeys.find((key) => parsed.searchParams.has(key));
+            if (existingKey) {
+                parsed.searchParams.set(existingKey, rawQuery);
+                return parsed.toString();
+            }
+            if (isKagiHost(parsed.hostname)) {
+                parsed.searchParams.set('q', rawQuery);
+                return parsed.toString();
+            }
+            if (!parsed.search || parsed.search === '?') {
+                parsed.searchParams.set('q', rawQuery);
+                return parsed.toString();
+            }
+        } catch (error) {
+            // Fallback is handled below for non-URL templates.
+        }
+
+        if (rawEngineUrl.includes('?')) {
+            const separator = rawEngineUrl.endsWith('?') || rawEngineUrl.endsWith('&') ? '' : '&';
+            return `${rawEngineUrl}${separator}q=${encodedQuery}`;
+        }
+        return `${rawEngineUrl}?q=${encodedQuery}`;
+    }
+
+    function maybeShowKagiSigninHint(targetUrl) {
+        const hintWasShown = localStorage.getItem(KAGI_SIGNIN_HINT_SHOWN_KEY) === '1';
+        if (hintWasShown) return;
+        let host = '';
+        try {
+            host = new URL(targetUrl).hostname;
+        } catch (error) {
+            host = '';
+        }
+        if (!isKagiHost(host)) return;
+        localStorage.setItem(KAGI_SIGNIN_HINT_SHOWN_KEY, '1');
+        alert(trKey(
+            'kagiSigninHint',
+            'Kagi может показать приветственную страницу, если вы не вошли в аккаунт Kagi. Это нормально: авторизуйтесь один раз, и дальше поиск будет открываться сразу.'
+        ));
     }
 
     function renderEngineSettingsList() {
@@ -2516,10 +2967,15 @@
 
     function openLinksInTabs(items) {
         if (!Array.isArray(items) || !items.length) return;
-        let openedCount = 0;
+        const urls = [];
         items.forEach((item) => {
             const url = normalizeUrl(item?.url || '');
-            if (!url) return;
+            if (url) urls.push(url);
+        });
+        if (!urls.length) return;
+
+        let openedCount = 0;
+        urls.forEach((url) => {
             if (extensionApi?.tabs?.create) {
                 try {
                     extensionApi.tabs.create({ url });
@@ -2529,10 +2985,56 @@
                     // Fallback to window.open below.
                 }
             }
-            const popup = window.open(url, '_blank');
-            if (popup) openedCount += 1;
         });
-        if (!extensionApi?.tabs?.create && items.length > 1 && openedCount < items.length) {
+
+        if (!extensionApi?.tabs?.create) {
+            const tuning = getBrowserProfileTuning();
+            const openUrlInNewTab = (url) => {
+                let popup = null;
+                try {
+                    popup = window.open(url, '_blank');
+                } catch (error) {
+                    popup = null;
+                }
+                if (popup) openedCount += 1;
+                return popup;
+            };
+
+            if (tuning.reservePopupTabsForBatchOpen && urls.length > 1) {
+                const reservedTabs = [];
+                urls.forEach((url) => {
+                    let popup = null;
+                    try {
+                        popup = window.open('about:blank', '_blank');
+                    } catch (error) {
+                        popup = null;
+                    }
+                    if (!popup) return;
+                    openedCount += 1;
+                    reservedTabs.push({ popup, url });
+                });
+                reservedTabs.forEach(({ popup, url }) => {
+                    try {
+                        popup.location.replace(url);
+                    } catch (error) {
+                        try {
+                            popup.location.href = url;
+                        } catch (err) {
+                            // ignore navigation failures for reserved popup
+                        }
+                    }
+                });
+                if (!reservedTabs.length) {
+                    openUrlInNewTab(urls[0]);
+                }
+            } else {
+                urls.forEach((url) => {
+                    openUrlInNewTab(url);
+                });
+            }
+        }
+
+        if (!extensionApi?.tabs?.create && urls.length > 1 && openedCount < urls.length) {
             alert(trKey(
                 'openTabsPopupBlocked',
                 'Браузер заблокировал часть вкладок. Разрешите всплывающие окна для AirTab, чтобы открыть все.'
@@ -2946,6 +3448,7 @@
         document.getElementById('linkName').value = '';
         document.getElementById('linkUrl').value = '';
         document.getElementById('linkIcon').value = '';
+        document.getElementById('linkName').dataset.autoValue = '';
         document.getElementById('folderName').value = '';
         setEmoji(document.getElementById('folderEmojiBtn'), '');
         document.getElementById('btnDeleteItem').style.display = 'none';
@@ -2991,6 +3494,7 @@
         document.getElementById('linkName').value = item.name || '';
         document.getElementById('linkUrl').value = item.url || '';
         document.getElementById('linkIcon').value = item.customIcon || '';
+        document.getElementById('linkName').dataset.autoValue = '';
         document.getElementById('folderName').value = item.name || '';
         setEmoji(document.getElementById('folderEmojiBtn'), item.emoji || '');
         document.getElementById('btnDeleteItem').style.display = 'block';
@@ -3051,10 +3555,14 @@
                 space.items.push(newFolder);
             }
         } else {
-            const name = document.getElementById('linkName').value.trim();
+            let name = document.getElementById('linkName').value.trim();
             let url = normalizeUrl(document.getElementById('linkUrl').value.trim());
             const customIcon = document.getElementById('linkIcon').value.trim();
-            if (!name || !url) return;
+            if (!url) return;
+            if (!name) {
+                name = suggestNameFromUrl(url, trKey('siteNamePlaceholder', 'Название сайта'));
+                if (!name) return;
+            }
 
             let existingCompact = false;
             let existingSidebar = 'left';
@@ -4851,7 +5359,11 @@
         e.preventDefault();
         const query = document.getElementById('searchInput').value.trim();
         const activeEngine = engines.find(e => e.id == activeEngineId) || engines[0];
-        if (query && activeEngine) window.location.href = activeEngine.url + encodeURIComponent(query);
+        if (!query || !activeEngine) return;
+        const targetUrl = buildSearchTargetUrl(activeEngine, query);
+        if (!targetUrl) return;
+        maybeShowKagiSigninHint(targetUrl);
+        window.location.href = targetUrl;
     });
 
     container.addEventListener('click', (e) => {
@@ -5128,6 +5640,10 @@
     document.getElementById('btnSaveItem').addEventListener('click', saveItemFromModal);
     document.getElementById('btnDeleteItem').addEventListener('click', deleteItemFromModal);
     document.getElementById('btnMoveOut').addEventListener('click', moveItemOutOfFolder);
+    const linkNameInput = document.getElementById('linkName');
+    const linkUrlInput = document.getElementById('linkUrl');
+    linkUrlInput.addEventListener('input', maybeAutofillLinkNameFromUrl);
+    linkNameInput.addEventListener('input', () => markAutoFillValueAsManual(linkNameInput));
 
     document.getElementById('itemTypeRow').addEventListener('click', (e) => {
         const btn = e.target.closest('.segmented-btn');
@@ -5474,6 +5990,8 @@
             document.getElementById('engineName').value = engines[index].name;
             document.getElementById('engineUrl').value = engines[index].url;
             document.getElementById('engineIcon').value = engines[index].icon;
+            document.getElementById('engineName').dataset.autoValue = '';
+            document.getElementById('engineIcon').dataset.autoValue = '';
             openModal('engineEditModal');
         }
     });
@@ -5485,25 +6003,42 @@
         document.getElementById('engineName').value = "";
         document.getElementById('engineUrl').value = "";
         document.getElementById('engineIcon').value = "";
+        document.getElementById('engineName').dataset.autoValue = '';
+        document.getElementById('engineIcon').dataset.autoValue = '';
         openModal('engineEditModal');
     });
 
     document.getElementById('btnCancelEngine').addEventListener('click', () => closeModal('engineEditModal'));
+    const engineNameInput = document.getElementById('engineName');
+    const engineUrlInput = document.getElementById('engineUrl');
+    const engineIconInput = document.getElementById('engineIcon');
+    engineUrlInput.addEventListener('input', maybeAutofillEngineFieldsFromUrl);
+    engineNameInput.addEventListener('input', () => markAutoFillValueAsManual(engineNameInput));
+    engineIconInput.addEventListener('input', () => markAutoFillValueAsManual(engineIconInput));
 
     document.getElementById('btnSaveEngine').addEventListener('click', () => {
         const index = document.getElementById('editEngineIndex').value;
-        const name = document.getElementById('engineName').value.trim();
-        const url = document.getElementById('engineUrl').value.trim();
-        const icon = document.getElementById('engineIcon').value.trim();
-        if (name && url && icon) {
-            const newEng = { id: Date.now(), name, url, icon };
-            if (index !== "") engines[index] = newEng;
-            else engines.push(newEng);
-            localStorage.setItem('myEngines', JSON.stringify(engines));
-            renderEngineSettingsList();
-            renderSearchDropdown();
-            closeModal('engineEditModal');
+        let name = document.getElementById('engineName').value.trim();
+        const url = normalizeUrl(document.getElementById('engineUrl').value.trim());
+        let icon = document.getElementById('engineIcon').value.trim();
+        if (!url) {
+            alert(trKey('fillEngineUrlField', 'Введите URL поисковика.'));
+            return;
         }
+        if (!name) name = suggestNameFromUrl(url, trKey('search', 'Поиск'));
+        if (!icon) icon = suggestIconFromUrl(url, FAVICON_SIZE_GRID);
+        if (!name || !icon) {
+            alert(trKey('fillEngineUrlField', 'Введите URL поисковика.'));
+            return;
+        }
+        const existingId = index !== "" && engines[index] ? engines[index].id : Date.now();
+        const newEng = { id: existingId, name, url, icon };
+        if (index !== "") engines[index] = newEng;
+        else engines.push(newEng);
+        localStorage.setItem('myEngines', JSON.stringify(engines));
+        renderEngineSettingsList();
+        renderSearchDropdown();
+        closeModal('engineEditModal');
     });
 
     document.getElementById('btnDeleteEngine').addEventListener('click', () => {
@@ -6021,8 +6556,9 @@
 
     let lastWheelSwitch = 0;
     window.addEventListener('wheel', (e) => {
+        const tuning = getBrowserProfileTuning();
         const now = Date.now();
-        if (now - lastWheelSwitch < 500) return;
+        if (now - lastWheelSwitch < tuning.wheelSwitchCooldownMs) return;
         const modalOpen = document.querySelector('.modal.active');
         if (modalOpen) return;
         if (e.target.closest('.sidebar')) return;
@@ -6039,6 +6575,14 @@
         }
     }, { passive: true });
 
+    const appScrollContainer = document.querySelector('.container');
+    appScrollContainer?.addEventListener('scroll', () => {
+        scheduleLazyGridExpandCheck();
+    }, { passive: true });
+    window.addEventListener('resize', () => {
+        scheduleLazyGridExpandCheck();
+    });
+
     let touchStartX = 0;
     let touchStartY = 0;
     document.addEventListener('touchstart', (e) => {
@@ -6052,9 +6596,10 @@
         const touch = e.changedTouches[0];
         const dx = touch.clientX - touchStartX;
         const dy = touch.clientY - touchStartY;
+        const swipeThreshold = getBrowserProfileTuning().touchSwipeThresholdPx;
         const modalOpen = document.querySelector('.modal.active');
         if (modalOpen) return;
-        if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) {
+        if (Math.abs(dx) > swipeThreshold && Math.abs(dx) > Math.abs(dy)) {
             handleSpaceSwitch(dx > 0 ? -1 : 1);
         }
         touchStartX = 0;
