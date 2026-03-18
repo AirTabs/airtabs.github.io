@@ -47,6 +47,7 @@
     const SYNC_DROPBOX_FILE_NAME_KEY = 'airtabDropboxSyncFileName';
     const SYNC_DROPBOX_TOKEN_KEY = 'airtabDropboxSyncToken';
     const SYNC_LAST_LOCAL_UPDATED_AT_KEY = 'airtabSyncLastLocalUpdatedAt';
+    const PREPAINT_BG_STORAGE_KEY = 'airtabPrepaintBg';
     const DEFAULT_SYNC_FILE_NAME = 'AirTab.sync.json';
     const DROPBOX_SCOPE = 'files.content.read files.content.write';
     const DROPBOX_APP_KEY_DEFAULT = '714cwwsa9yxk7tn';
@@ -1723,13 +1724,35 @@
         return (r * 299 + g * 587 + b * 114) / 1000;
     }
 
+    function persistPrepaintBackground(bgValue, preloadColor) {
+        try {
+            const safeBg = String(bgValue || '').trim();
+            const safeColor = String(preloadColor || '').trim();
+            if (!safeBg && !safeColor) return;
+            localStorage.setItem(PREPAINT_BG_STORAGE_KEY, JSON.stringify({
+                bg: safeBg,
+                color: safeColor,
+                updatedAt: Date.now()
+            }));
+        } catch (error) {
+            // ignore localStorage serialization/quota issues
+        }
+    }
+
     function applyBg(bgValue) {
         if (!bgValue) return;
         const root = document.documentElement;
-        root.style.setProperty('--initial-bg', bgValue);
+        const isSolidColor = bgValue.startsWith('#') || bgValue.startsWith('rgb');
+        const preloadColor = isSolidColor
+            ? bgValue
+            : (darkModeQuery.matches ? defaultBgDark : defaultBgLight);
+
+        root.style.setProperty('--initial-bg', preloadColor);
+        root.style.setProperty('--preload-bg-image', 'none');
+        root.style.backgroundColor = preloadColor;
         const themeMeta = document.querySelector('meta[name="theme-color"]');
-        if (themeMeta && (bgValue.startsWith('#') || bgValue.startsWith('rgb'))) {
-            themeMeta.setAttribute('content', bgValue);
+        if (themeMeta) {
+            themeMeta.setAttribute('content', preloadColor);
         }
 
         const setLightTokens = () => {
@@ -1760,7 +1783,7 @@
             document.body.classList.add('theme-dark');
         };
 
-        if (bgValue.startsWith('#') || bgValue.startsWith('rgb')) {
+        if (isSolidColor) {
             document.body.style.backgroundImage = 'none';
             document.body.style.backgroundColor = bgValue;
             if (getBrightness(bgValue) > 130) {
@@ -1771,10 +1794,13 @@
                 root.style.setProperty('--overlay-opacity', '0');
             }
         } else {
+            document.body.style.backgroundColor = preloadColor;
             document.body.style.backgroundImage = `url('${bgValue}')`;
             setDarkTokens();
             root.style.setProperty('--overlay-opacity', '0.32');
         }
+
+        persistPrepaintBackground(bgValue, preloadColor);
     }
 
     function readFileAsDataUrl(file) {

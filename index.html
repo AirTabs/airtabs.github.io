@@ -5,28 +5,50 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" content="#2c2c2e">
+    <style>
+        html, body { background-color: #2c2c2e; }
+        @media (prefers-color-scheme: light) {
+            html, body { background-color: #f2f2f7; }
+        }
+    </style>
     <script>
         (() => {
             try {
                 const LOCAL_BG_TOKEN_PREFIX = 'local-file://';
+                const PREPAINT_BG_STORAGE_KEY = 'airtabPrepaintBg';
                 const root = document.documentElement;
-                const dataRaw = localStorage.getItem('airtabData');
-                let activeSpaceBg = '';
-                if (dataRaw) {
-                    const data = JSON.parse(dataRaw);
-                    const activeSpace = data?.spaces?.find((space) => space?.id === data?.activeSpaceId);
-                    activeSpaceBg = String(activeSpace?.bg || '').trim();
-                }
                 const bgLight = localStorage.getItem('myBgLight') || localStorage.getItem('myBg') || '#f2f2f7';
                 const bgDark = localStorage.getItem('myBgDark') || '#2c2c2e';
                 const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-                const themeBg = isDark ? bgDark : bgLight;
-                const initialBg = activeSpaceBg && !activeSpaceBg.startsWith(LOCAL_BG_TOKEN_PREFIX) ? activeSpaceBg : themeBg;
-                const isColor = initialBg.startsWith('#') || initialBg.startsWith('rgb');
                 const solidFallback = isDark ? '#2c2c2e' : '#f2f2f7';
-                const preloadColor = isColor ? initialBg : solidFallback;
-                root.style.setProperty('--initial-bg', initialBg);
+                let initialBg = String(isDark ? bgDark : bgLight).trim();
+                let preloadColor = '';
+
+                const prepaintRaw = localStorage.getItem(PREPAINT_BG_STORAGE_KEY);
+                if (prepaintRaw) {
+                    const prepaint = JSON.parse(prepaintRaw);
+                    if (prepaint && typeof prepaint === 'object') {
+                        const cachedBg = String(prepaint.bg || '').trim();
+                        const cachedColor = String(prepaint.color || '').trim();
+                        if (cachedBg) initialBg = cachedBg;
+                        if (cachedColor) preloadColor = cachedColor;
+                    }
+                }
+
+                if (initialBg.startsWith(LOCAL_BG_TOKEN_PREFIX)) {
+                    initialBg = String(isDark ? bgDark : bgLight).trim() || solidFallback;
+                }
+                const isColor = initialBg.startsWith('#') || initialBg.startsWith('rgb');
+                if (!preloadColor || (!preloadColor.startsWith('#') && !preloadColor.startsWith('rgb'))) {
+                    preloadColor = isColor ? initialBg : solidFallback;
+                }
+                root.style.setProperty('--initial-bg', preloadColor);
+                root.style.setProperty('--preload-bg-image', 'none');
                 root.style.backgroundColor = preloadColor;
+                if (!isColor) {
+                    const safeImageUrl = initialBg.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                    root.style.setProperty('--preload-bg-image', `url("${safeImageUrl}")`);
+                }
                 const themeMeta = document.querySelector('meta[name="theme-color"]');
                 if (themeMeta) themeMeta.setAttribute('content', preloadColor);
             } catch (e) {}

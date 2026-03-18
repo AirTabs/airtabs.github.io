@@ -1,6 +1,7 @@
 (() => {
     try {
         const LOCAL_BG_TOKEN_PREFIX = 'local-file://';
+        const PREPAINT_BG_STORAGE_KEY = 'airtabPrepaintBg';
         const getBrightness = (color) => {
             const value = String(color || '').trim().toLowerCase();
             let r = 0; let g = 0; let b = 0;
@@ -49,21 +50,37 @@
             root.style.setProperty('--shadow-2', '0 20px 46px rgba(0,0,0,0.42)');
         };
         const root = document.documentElement;
-        const dataRaw = localStorage.getItem('airtabData');
-        const data = dataRaw ? JSON.parse(dataRaw) : null;
-        const activeSpaceId = data?.activeSpaceId;
-        const space = data?.spaces?.find(s => s.id === activeSpaceId);
-        const spaceBgRaw = String(space?.bg || '').trim();
         const bgLight = localStorage.getItem('myBgLight') || localStorage.getItem('myBg') || '#f2f2f7';
         const bgDark = localStorage.getItem('myBgDark') || '#2c2c2e';
         const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        const themeFallbackBg = isDark ? bgDark : bgLight;
-        const isLocalBgToken = spaceBgRaw.startsWith(LOCAL_BG_TOKEN_PREFIX);
-        const initialBg = (spaceBgRaw && !isLocalBgToken) ? spaceBgRaw : themeFallbackBg;
-        const isSolidColor = initialBg.startsWith('#') || initialBg.startsWith('rgb');
         const solidFallback = isDark ? '#2c2c2e' : '#f2f2f7';
-        const preloadColor = isSolidColor ? initialBg : solidFallback;
-        root.style.setProperty('--initial-bg', initialBg);
+
+        let initialBg = String(isDark ? bgDark : bgLight).trim();
+        let preloadColor = '';
+        try {
+            const prepaintRaw = localStorage.getItem(PREPAINT_BG_STORAGE_KEY);
+            if (prepaintRaw) {
+                const prepaint = JSON.parse(prepaintRaw);
+                if (prepaint && typeof prepaint === 'object') {
+                    const cachedBg = String(prepaint.bg || '').trim();
+                    const cachedColor = String(prepaint.color || '').trim();
+                    if (cachedBg) initialBg = cachedBg;
+                    if (cachedColor) preloadColor = cachedColor;
+                }
+            }
+        } catch (error) {
+            // ignore malformed prepaint cache
+        }
+
+        if (initialBg.startsWith(LOCAL_BG_TOKEN_PREFIX)) {
+            initialBg = String(isDark ? bgDark : bgLight).trim() || solidFallback;
+        }
+        const isSolidColor = initialBg.startsWith('#') || initialBg.startsWith('rgb');
+        if (!preloadColor || (!preloadColor.startsWith('#') && !preloadColor.startsWith('rgb'))) {
+            preloadColor = isSolidColor ? initialBg : solidFallback;
+        }
+
+        root.style.setProperty('--initial-bg', preloadColor);
         root.style.setProperty('--preload-bg-image', 'none');
         root.style.backgroundColor = preloadColor;
         root.classList.add('preload');
