@@ -1054,9 +1054,9 @@ document.addEventListener('DOMContentLoaded', () => {
     async function getDropboxTokenState() {
         if (dropboxTokenStateCacheLoaded) {
             if (!dropboxTokenStateCache) {
-                const maybeFromStorage = readJsonStorage(SYNC_DROPBOX_TOKEN_KEY, null);
-                if (maybeFromStorage && typeof maybeFromStorage === 'object') {
-                    dropboxTokenStateCache = maybeFromStorage;
+                const maybeFromStore = await readDropboxTokenStateFromSessionStore();
+                if (maybeFromStore && typeof maybeFromStore === 'object') {
+                    dropboxTokenStateCache = maybeFromStore;
                 }
             }
             return dropboxTokenStateCache;
@@ -1067,7 +1067,6 @@ document.addEventListener('DOMContentLoaded', () => {
             tokenState = legacy;
             await writeDropboxTokenStateToSessionStore(tokenState);
         }
-        if (legacy) localStorage.removeItem(SYNC_DROPBOX_TOKEN_KEY);
         dropboxTokenStateCache = tokenState && typeof tokenState === 'object' ? tokenState : null;
         dropboxTokenStateCacheLoaded = true;
         return dropboxTokenStateCache;
