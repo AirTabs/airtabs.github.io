@@ -205,6 +205,7 @@
         document.body.classList.toggle('is-mobile-ui', isMobileUi);
     }
     applyMobileUiClass();
+    if (!extensionApi) document.body.classList.add('web-lite');
 
     let data = loadData();
     if (!localStorage.getItem(SYNC_LAST_LOCAL_UPDATED_AT_KEY)) {
@@ -1917,6 +1918,11 @@
     }
 
     function scheduleIdleVisualState() {
+        if (document.body.classList.contains('web-lite')) {
+            clearIdleVisualsTimer();
+            setIdleVisualState(false);
+            return;
+        }
         clearIdleVisualsTimer();
         if (document.hidden) {
             setIdleVisualState(true);

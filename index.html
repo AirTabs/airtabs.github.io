@@ -2022,6 +2022,47 @@
             line-height: 1.35;
         }
 
+        body.web-lite .overlay {
+            display: none !important;
+            opacity: 0 !important;
+        }
+        body.web-lite .search-wrapper,
+        body.web-lite .spaces-nav,
+        body.web-lite .sidebar-section,
+        body.web-lite .engine-list,
+        body.web-lite .modal,
+        body.web-lite .modal-content,
+        body.web-lite .card-box,
+        body.web-lite .card-box-wrap,
+        body.web-lite .compact-card,
+        body.web-lite .tree-folder,
+        body.web-lite .pill-btn,
+        body.web-lite .space-pill,
+        body.web-lite .settings-btn,
+        body.web-lite .tree-menu,
+        body.web-lite .selection-chip {
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            box-shadow: none !important;
+            filter: none !important;
+        }
+        body.web-lite .card-box-wrap:hover,
+        body.web-lite .compact-card:hover,
+        body.web-lite .space-pill:hover,
+        body.web-lite .pill-btn:hover,
+        body.web-lite .settings-btn:hover,
+        body.web-lite .tree-folder:hover {
+            transform: none !important;
+            filter: none !important;
+        }
+        body.web-lite *,
+        body.web-lite *::before,
+        body.web-lite *::after {
+            animation: none !important;
+            transition: none !important;
+            will-change: auto !important;
+        }
+
         body.perf-eco .overlay {
             opacity: calc(var(--overlay-opacity) * 0.45);
         }
