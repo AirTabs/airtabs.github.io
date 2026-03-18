@@ -59,7 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const FAVICON_SIZE_GRID = 64;
     const FAVICON_SIZE_COMPACT = 32;
     const FAVICON_FALLBACK_ICON = 'icons/icon-32.png';
-    const HIDE_RIGHT_SIDEBAR_QUERY = '(max-width: 1100px)';
+    const HIDE_RIGHT_SIDEBAR_QUERY = '(min-width: 901px) and (max-width: 1100px)';
 
     let performanceMode = localStorage.getItem('airtabPerformanceMode') || 'balanced';
     if (performanceMode !== 'eco') performanceMode = 'balanced';

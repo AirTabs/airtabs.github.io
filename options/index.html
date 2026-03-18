@@ -293,12 +293,36 @@
             gap: 10px;
             margin-top: 12px;
         }
+        .sync-mode-switch {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .sync-mode-btn {
+            border: 1px solid var(--outline);
+            border-radius: 999px;
+            padding: 8px 12px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            background: var(--surface-2);
+            color: var(--text);
+            transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+        }
+        .sync-mode-btn:hover { transform: translateY(-1px); }
+        .sync-mode-btn.active {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: var(--on-primary);
+        }
         .sync-card {
             border: 1px solid var(--outline);
             border-radius: 16px;
             padding: 12px;
             background: color-mix(in srgb, var(--surface-2) 90%, transparent);
         }
+        .sync-card-mode { margin-top: 12px; }
         .sync-card h3 {
             margin: 0 0 10px;
             font-size: 15px;
@@ -498,35 +522,37 @@
 
             <div class="import-card">
                 <h3>Синхронизация</h3>
-                <div class="sync-grid">
-                    <div class="sync-card">
-                        <h3>Файл (iCloud/Dropbox/папка)</h3>
-                        <div class="muted">Привяжите один `AirTab.sync.json` в синхронизируемой папке. Это самый легковесный вариант.</div>
-                        <div class="sync-actions">
-                            <button type="button" class="btn btn-ghost" id="btnSyncFilePick">Привязать файл</button>
-                        </div>
-                        <div class="muted">Автосинхронизация включена: изменения отправляются сразу, получение — при открытии/обновлении вкладки AirTab.</div>
-                        <div class="sync-meta" id="syncFileMeta">Файл не привязан.</div>
-                    </div>
-
-                    <div class="sync-card">
-                        <h3>Dropbox</h3>
-                        <div class="sync-input-wrap">
-                            <div>
-                                <label for="googleDriveFileNameInput">Имя sync-файла</label>
-                                <input type="text" id="googleDriveFileNameInput" placeholder="AirTab.sync.json">
-                            </div>
-                        </div>
-                        <div class="sync-actions">
-                            <button type="button" class="btn btn-ghost" id="btnGoogleConnect">Авторизоваться через Dropbox</button>
-                            <button type="button" class="btn btn-danger" id="btnGoogleDisconnect">Отключить</button>
-                        </div>
-                        <div class="muted">Автосинхронизация включена: изменения отправляются сразу, получение — при открытии/обновлении вкладки AirTab.</div>
-                        <div class="sync-meta" id="googleSyncMeta">Dropbox не подключен.</div>
-                    </div>
+                <div class="muted">Выберите режим синхронизации:</div>
+                <div class="sync-mode-switch" id="syncModeSwitch">
+                    <button type="button" class="sync-mode-btn active" data-sync-mode="dropbox">Dropbox</button>
+                    <button type="button" class="sync-mode-btn" data-sync-mode="local">Локальный файл</button>
                 </div>
-                <div class="muted" id="googleAuthHint">Авторизация через Dropbox-аккаунт в браузере. Токен вручную вводить не нужно.</div>
-                <div class="muted" id="dropboxRedirectHint"></div>
+
+                <div class="sync-card sync-card-mode" id="dropboxSyncCard">
+                    <h3>Dropbox</h3>
+                    <div class="sync-input-wrap">
+                        <div>
+                            <label for="googleDriveFileNameInput">Имя sync-файла</label>
+                            <input type="text" id="googleDriveFileNameInput" placeholder="AirTab.sync.json">
+                        </div>
+                    </div>
+                    <div class="sync-actions">
+                        <button type="button" class="btn btn-ghost" id="btnGoogleConnect">Авторизоваться через Dropbox</button>
+                        <button type="button" class="btn btn-danger" id="btnGoogleDisconnect">Отключить</button>
+                    </div>
+                    <div class="muted">Автосинхронизация включена: изменения отправляются сразу, получение — при открытии/обновлении вкладки AirTab.</div>
+                    <div class="sync-meta" id="googleSyncMeta">Dropbox не подключен.</div>
+                </div>
+
+                <div class="sync-card sync-card-mode hidden" id="localSyncCard">
+                    <h3>Файл (iCloud/Dropbox/папка)</h3>
+                    <div class="muted">Привяжите один `AirTab.sync.json` в синхронизируемой папке. Это самый легковесный вариант.</div>
+                    <div class="sync-actions">
+                        <button type="button" class="btn btn-ghost" id="btnSyncFilePick">Привязать файл</button>
+                    </div>
+                    <div class="muted">Автосинхронизация включена: изменения отправляются сразу, получение — при открытии/обновлении вкладки AirTab.</div>
+                    <div class="sync-meta" id="syncFileMeta">Файл не привязан.</div>
+                </div>
             </div>
 
             <div class="import-card">

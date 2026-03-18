@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const SYNC_GOOGLE_FILE_NAME_KEY = 'airtabDropboxSyncFileName';
     const SYNC_GOOGLE_TOKEN_KEY = 'airtabDropboxSyncToken';
     const SYNC_LAST_LOCAL_UPDATED_AT_KEY = 'airtabSyncLastLocalUpdatedAt';
+    const SYNC_UI_MODE_KEY = 'airtabSyncUiMode';
     const DEFAULT_GOOGLE_SYNC_FILE = 'AirTab.sync.json';
     const DROPBOX_SCOPE = 'files.content.read files.content.write';
     const DROPBOX_APP_KEY_DEFAULT = '714cwwsa9yxk7tn';
@@ -998,6 +999,30 @@ document.addEventListener('DOMContentLoaded', () => {
             minute: '2-digit',
             second: '2-digit'
         });
+    }
+
+    function getSyncUiMode() {
+        const stored = String(localStorage.getItem(SYNC_UI_MODE_KEY) || '').trim().toLowerCase();
+        return stored === 'local' ? 'local' : 'dropbox';
+    }
+
+    function applySyncModeUi(mode = getSyncUiMode()) {
+        const normalized = mode === 'local' ? 'local' : 'dropbox';
+        const dropboxCard = document.getElementById('dropboxSyncCard');
+        const localCard = document.getElementById('localSyncCard');
+        const modeButtons = document.querySelectorAll('#syncModeSwitch .sync-mode-btn');
+
+        modeButtons.forEach((button) => {
+            button.classList.toggle('active', button.dataset.syncMode === normalized);
+        });
+        if (dropboxCard) dropboxCard.classList.toggle('hidden', normalized !== 'dropbox');
+        if (localCard) localCard.classList.toggle('hidden', normalized !== 'local');
+    }
+
+    function setSyncUiMode(mode) {
+        const nextMode = mode === 'local' ? 'local' : 'dropbox';
+        localStorage.setItem(SYNC_UI_MODE_KEY, nextMode);
+        applySyncModeUi(nextMode);
     }
 
     async function buildThemeFallbackBlob(file) {
@@ -2295,8 +2320,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const btnGoogleConnect = document.getElementById('btnGoogleConnect');
         const btnGoogleDisconnect = document.getElementById('btnGoogleDisconnect');
         const googleDriveFileNameInput = document.getElementById('googleDriveFileNameInput');
-        const googleAuthHintEl = document.getElementById('googleAuthHint');
-        const dropboxRedirectHintEl = document.getElementById('dropboxRedirectHint');
 
         let hasSyncFileHandle = false;
         let handleName = '';
@@ -2325,7 +2348,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const hasGoogleAuthApi = hasGoogleDriveAuthApi();
-        const hasGoogleManifestAuth = hasGoogleDriveManifestOAuthConfig();
         const fileName = getGoogleSyncFileName();
         const googleMeta = getSyncGoogleMeta();
         const isConnected = hasGoogleAuthApi && isGoogleSyncConnectedFromMeta(googleMeta);
@@ -2349,35 +2371,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btnGoogleDisconnect) btnGoogleDisconnect.disabled = !hasGoogleAuthApi || !isConnected;
         if (googleDriveFileNameInput && document.activeElement !== googleDriveFileNameInput) {
             googleDriveFileNameInput.value = fileName;
-        }
-        if (googleAuthHintEl) {
-            if (!hasGoogleAuthApi) {
-                googleAuthHintEl.textContent = trKey(
-                    'browserNoOAuthApi',
-                    'Этот браузер не поддерживает безопасную OAuth-авторизацию (ни API расширения, ни popup flow).'
-                );
-            } else if (!hasGoogleManifestAuth) {
-                googleAuthHintEl.textContent = trKey(
-                    'dropboxKeyMissingHint',
-                    'Требуется внутренняя настройка AirTab: Dropbox App Key не найден. Пользователю ничего вводить не нужно.'
-                );
-            } else {
-                googleAuthHintEl.textContent = trKey(
-                    'dropboxAuthHintConfigured',
-                    'Авторизация через Dropbox-аккаунт в браузере. Ключ и токен вручную вводить не нужно.'
-                );
-            }
-        }
-        if (dropboxRedirectHintEl) {
-            if (extensionApi?.identity?.getRedirectURL) {
-                dropboxRedirectHintEl.textContent = '';
-            } else {
-                dropboxRedirectHintEl.textContent = trKey(
-                    'dropboxRedirectUriHint',
-                    'Redirect URI для Dropbox: {uri}',
-                    { uri: getDropboxRedirectUri() }
-                );
-            }
         }
     }
 
@@ -2517,12 +2510,22 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const syncModeSwitch = document.getElementById('syncModeSwitch');
+    if (syncModeSwitch) {
+        syncModeSwitch.addEventListener('click', (e) => {
+            const button = e.target.closest('.sync-mode-btn');
+            if (!button) return;
+            setSyncUiMode(button.dataset.syncMode || 'dropbox');
+        });
+    }
+
     const btnSyncFilePick = document.getElementById('btnSyncFilePick');
     if (btnSyncFilePick) {
         btnSyncFilePick.addEventListener('click', async () => {
             try {
                 await pickSyncFileHandle();
                 await syncPushToLocalFile();
+                setSyncUiMode('local');
                 showStatus(trKey('syncFileBound', 'Sync-файл привязан.'));
             } catch (error) {
                 if (error?.name === 'AbortError') return;
@@ -2543,6 +2546,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btnGoogleConnect.addEventListener('click', async () => {
             try {
                 await connectGoogleDriveSync();
+                setSyncUiMode('dropbox');
                 try {
                     await syncPullFromGoogleDrive({ interactive: false });
                     showStatus(trKey('syncFromDropboxDone', 'Синхронизация из Dropbox выполнена.'));
@@ -2626,6 +2630,7 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshSpaceDependentUi();
     ensureBookmarkNewSpaceDefaults();
     updateBookmarkTargetSpaceVisibility();
+    applySyncModeUi();
     updateSyncUi().catch(() => {});
     if (i18n) i18n.translateDocument(document.body);
 });
