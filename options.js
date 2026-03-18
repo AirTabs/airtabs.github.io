@@ -1396,13 +1396,41 @@ document.addEventListener('DOMContentLoaded', () => {
         showStatus(trKey('backupDownloaded', 'Резервная копия скачана.'));
     }
 
+    async function syncDropboxAfterLocalBackupRestore() {
+        if (!isGoogleSyncConnectedFromMeta()) return { attempted: false, ok: false, error: '' };
+        try {
+            await syncPushToGoogleDrive({ interactive: false });
+            clearGoogleSyncError();
+            return { attempted: true, ok: true, error: '' };
+        } catch (error) {
+            const message = String(error?.message || trKey('genericError', 'ошибка'));
+            setGoogleSyncError(message);
+            return { attempted: true, ok: false, error: message };
+        }
+    }
+
     function importBackup(file) {
         const reader = new FileReader();
         reader.onload = async function(evt) {
             try {
                 const imported = JSON.parse(evt.target?.result || '{}');
                 await applyImportedBackup(imported);
-                showStatus(trKey('backupRestored', 'Резерв восстановлен.'));
+                const dropboxSync = await syncDropboxAfterLocalBackupRestore();
+                if (dropboxSync.attempted && dropboxSync.ok) {
+                    showStatus(trKey('backupRestoredAndDropboxSynced', 'Резерв восстановлен и отправлен в Dropbox.'));
+                } else if (dropboxSync.attempted) {
+                    showStatus(
+                        trKey(
+                            'backupRestoredDropboxSyncFailed',
+                            'Резерв восстановлен, но отправка в Dropbox не удалась: {error}',
+                            { error: dropboxSync.error || trKey('genericError', 'ошибка') }
+                        ),
+                        'error'
+                    );
+                } else {
+                    showStatus(trKey('backupRestored', 'Резерв восстановлен.'));
+                }
+                await updateSyncUi().catch(() => {});
             } catch (error) {
                 showStatus(trKey('backupImportBadFile', 'Ошибка импорта: неверный файл.'), 'error');
             }

@@ -5928,8 +5928,30 @@ document.addEventListener('DOMContentLoaded', () => {
                     dark: restoredDark
                 });
                 markLocalDataUpdated(Date.now());
+                let restoreNotice = trKey('reloadSuccess', 'Успешно! Страница будет перезагружена.');
+                if (isDropboxSyncConnected()) {
+                    try {
+                        const syncPayload = await buildBackupPayloadForSync();
+                        await pushPayloadToDropboxAuto(JSON.stringify(syncPayload));
+                        restoreNotice = trKey(
+                            'backupRestoredAndDropboxSyncedReload',
+                            'Резерв восстановлен и отправлен в Dropbox. Страница будет перезагружена.'
+                        );
+                    } catch (syncError) {
+                        const message = String(syncError?.message || trKey('genericError', 'ошибка'));
+                        setSyncDropboxMeta({
+                            lastError: message,
+                            lastErrorAt: Date.now()
+                        });
+                        restoreNotice = trKey(
+                            'backupRestoredDropboxSyncFailedReload',
+                            'Резерв восстановлен, но отправка в Dropbox не удалась: {error}. Страница будет перезагружена.',
+                            { error: message }
+                        );
+                    }
+                }
 
-                alert(trKey('reloadSuccess', 'Успешно! Страница будет перезагружена.'));
+                alert(restoreNotice);
                 location.reload();
             } catch (err) {
                 alert(trKey('importErrorBadFile', 'Ошибка! Неверный файл.'));
