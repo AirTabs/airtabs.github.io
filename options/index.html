@@ -620,26 +620,10 @@
 
     <script>
         (() => {
-            const STORAGE_KEY = 'airtabUiLanguage';
-            const normalizeLanguage = (raw) => {
-                const value = String(raw || '').trim();
-                if (!value || value === 'auto' || value === 'default') return 'auto';
-                if (value === 'ru' || value.startsWith('ru-')) return 'ru';
-                if (value === 'en' || value.startsWith('en-')) return 'en';
-                if (value === 'es' || value.startsWith('es-')) return 'es';
-                if (value === 'pt-BR' || value === 'pt_br' || value.toLowerCase().startsWith('pt')) return 'pt-BR';
-                if (value === 'zh-CN' || value === 'zh_cn' || value.toLowerCase().startsWith('zh')) return 'zh-CN';
-                if (value === 'hi' || value.toLowerCase().startsWith('hi')) return 'hi';
-                if (value === 'ar' || value.toLowerCase().startsWith('ar')) return 'ar';
-                return 'en';
-            };
-            const stored = normalizeLanguage(localStorage.getItem(STORAGE_KEY) || 'auto');
-            const browser = normalizeLanguage(
-                (navigator.languages && navigator.languages[0]) || navigator.language || 'en'
-            );
-            const active = stored === 'auto' ? browser : stored;
             const queue = [];
-            if (active !== 'ru') queue.push('i18n.js');
+            // i18n API must always be available in options page
+            // because the language selector is rendered from i18n.getLanguageOptions().
+            queue.push('i18n.js');
             queue.push('options.js');
             const mount = document.body || document.head || document.documentElement;
             const loadNext = () => {
