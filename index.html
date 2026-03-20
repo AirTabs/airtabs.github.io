@@ -1074,6 +1074,9 @@
         .sidebar-list .compact-wrapper > .compact-card {
             padding-right: 52px;
         }
+        .sidebar-list .compact-wrapper:hover > .compact-card {
+            transform: translateY(-2px);
+        }
         .sidebar-list .compact-wrapper > .edit-btn {
             top: 50%;
             right: 8px;
@@ -1090,7 +1093,7 @@
         }
         .sidebar-list .compact-wrapper:hover > .edit-btn {
             opacity: 1;
-            transform: translateY(-50%);
+            transform: translateY(calc(-50% - 2px));
         }
         .sidebar-list .compact-wrapper > .edit-btn:hover {
             background: var(--surface-3);

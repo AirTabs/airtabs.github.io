@@ -1,7 +1,6 @@
 (() => {
     try {
         const LOCAL_BG_TOKEN_PREFIX = 'local-file://';
-        const PREPAINT_BG_STORAGE_KEY = 'airtabPrepaintBg';
         const getBrightness = (color) => {
             const value = String(color || '').trim().toLowerCase();
             let r = 0; let g = 0; let b = 0;
@@ -50,39 +49,34 @@
             root.style.setProperty('--shadow-2', '0 20px 46px rgba(0,0,0,0.42)');
         };
         const root = document.documentElement;
-        const bgLight = localStorage.getItem('myBgLight') || localStorage.getItem('myBg') || '#f2f2f7';
-        const bgDark = localStorage.getItem('myBgDark') || '#2c2c2e';
+        const dataRaw = localStorage.getItem('airtabData');
+        const data = dataRaw ? JSON.parse(dataRaw) : null;
+        const activeSpaceId = data?.activeSpaceId;
+        const space = data?.spaces?.find(s => s.id === activeSpaceId);
+        const spaceBgRaw = String(space?.bg || '').trim();
+        const normalizeStoredThemeBg = (value, fallback) => {
+            const raw = String(value || '').trim();
+            if (!raw || raw.startsWith(LOCAL_BG_TOKEN_PREFIX)) return fallback;
+            return raw;
+        };
+        const bgLight = normalizeStoredThemeBg(
+            localStorage.getItem('myBgLight') || localStorage.getItem('myBg') || '#f2f2f7',
+            '#f2f2f7'
+        );
+        const bgDark = normalizeStoredThemeBg(
+            localStorage.getItem('myBgDark') || '#2c2c2e',
+            '#2c2c2e'
+        );
         const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        const solidFallback = isDark ? '#2c2c2e' : '#f2f2f7';
-
-        let initialBg = String(isDark ? bgDark : bgLight).trim();
-        let preloadColor = '';
-        try {
-            const prepaintRaw = localStorage.getItem(PREPAINT_BG_STORAGE_KEY);
-            if (prepaintRaw) {
-                const prepaint = JSON.parse(prepaintRaw);
-                if (prepaint && typeof prepaint === 'object') {
-                    const cachedBg = String(prepaint.bg || '').trim();
-                    const cachedColor = String(prepaint.color || '').trim();
-                    if (cachedBg) initialBg = cachedBg;
-                    if (cachedColor) preloadColor = cachedColor;
-                }
-            }
-        } catch (error) {
-            // ignore malformed prepaint cache
-        }
-
-        if (initialBg.startsWith(LOCAL_BG_TOKEN_PREFIX)) {
-            initialBg = String(isDark ? bgDark : bgLight).trim() || solidFallback;
-        }
+        const themeFallbackBg = isDark ? bgDark : bgLight;
+        const isLocalBgToken = spaceBgRaw.startsWith(LOCAL_BG_TOKEN_PREFIX);
+        const initialBgRaw = (spaceBgRaw && !isLocalBgToken) ? spaceBgRaw : themeFallbackBg;
+        const initialBg = initialBgRaw.startsWith(LOCAL_BG_TOKEN_PREFIX)
+            ? (isDark ? '#2c2c2e' : '#f2f2f7')
+            : initialBgRaw;
         const isSolidColor = initialBg.startsWith('#') || initialBg.startsWith('rgb');
-        if (!preloadColor || (!preloadColor.startsWith('#') && !preloadColor.startsWith('rgb'))) {
-            preloadColor = isSolidColor ? initialBg : solidFallback;
-        }
-
-        root.style.setProperty('--initial-bg', preloadColor);
+        root.style.setProperty('--initial-bg', initialBg);
         root.style.setProperty('--preload-bg-image', 'none');
-        root.style.backgroundColor = preloadColor;
         root.classList.add('preload');
 
         if (isSolidColor) {
@@ -97,8 +91,8 @@
         }
 
         const themeMeta = document.querySelector('meta[name="theme-color"]');
-        if (themeMeta) {
-            themeMeta.setAttribute('content', preloadColor);
+        if (themeMeta && (initialBg.startsWith('#') || initialBg.startsWith('rgb'))) {
+            themeMeta.setAttribute('content', initialBg);
         }
     } catch (e) {}
 })();

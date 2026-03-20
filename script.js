@@ -60,33 +60,86 @@
         ];
     }
 
+    function isLikelyImageIconSource(value) {
+        const source = String(value || '').trim();
+        if (!source) return false;
+        if (/^data:image\//i.test(source)) return true;
+        if (/^(chrome|moz)-extension:\/\//i.test(source)) return true;
+        if (/^[./]/.test(source)) return true;
+        if (!/^https?:\/\//i.test(source)) return false;
+        try {
+            const parsed = new URL(source);
+            const pathname = String(parsed.pathname || '').toLowerCase();
+            if (/\.(ico|png|jpg|jpeg|gif|webp|avif)(?:$)/.test(pathname)) return true;
+            if (pathname.includes('favicon')) return true;
+            if (parsed.hostname === 'www.google.com' && pathname.startsWith('/s2/favicons')) return true;
+        } catch (error) {
+            return false;
+        }
+        return false;
+    }
+
+    function deriveSearchEngineIconFromUrl(url) {
+        const normalizedUrl = normalizeUrl(url || '');
+        if (!normalizedUrl) return 'icons/icon-32.png';
+        try {
+            const parsed = new URL(normalizedUrl);
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return 'icons/icon-32.png';
+            const domainUrl = `${parsed.protocol}//${parsed.hostname}`;
+            return `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(domainUrl)}&sz=24`;
+        } catch (error) {
+            return 'icons/icon-32.png';
+        }
+    }
+
+    function sanitizeSearchEngineIcon(icon, engineUrl = '') {
+        const value = String(icon || '').trim();
+        if (!value) return deriveSearchEngineIconFromUrl(engineUrl);
+        if (value.startsWith('local-file://')) return deriveSearchEngineIconFromUrl(engineUrl);
+        if (isLikelyImageIconSource(value)) return value;
+        return deriveSearchEngineIconFromUrl(engineUrl);
+    }
+
+    function sanitizeSearchEngineRecord(engine, fallbackIndex = 0) {
+        const safeUrl = normalizeUrl(engine?.url || '');
+        if (!safeUrl) return null;
+        const safeName = String(engine?.name || `Engine ${fallbackIndex + 1}`).trim() || `Engine ${fallbackIndex + 1}`;
+        return {
+            id: engine?.id || Date.now() + fallbackIndex,
+            name: safeName,
+            url: safeUrl,
+            icon: sanitizeSearchEngineIcon(engine?.icon || '', safeUrl)
+        };
+    }
+
+    function sanitizeSearchEngineList(list) {
+        const source = Array.isArray(list) ? list : [];
+        const normalized = source
+            .map((engine, index) => sanitizeSearchEngineRecord(engine, index))
+            .filter(Boolean);
+        if (normalized.length) return normalized;
+        return defaultEngines
+            .map((engine, index) => sanitizeSearchEngineRecord(engine, index))
+            .filter(Boolean);
+    }
+
     function loadEnginesFromStorageForInit() {
         const raw = localStorage.getItem('myEngines');
         if (!raw) {
-            localStorage.setItem('myEngines', JSON.stringify(defaultEngines));
-            return defaultEngines.slice();
+            const fallback = sanitizeSearchEngineList(defaultEngines);
+            localStorage.setItem('myEngines', JSON.stringify(fallback));
+            return fallback;
         }
         try {
             const parsed = JSON.parse(raw);
-            if (!Array.isArray(parsed) || !parsed.length) throw new Error('empty');
-            const normalized = parsed
-                .filter(Boolean)
-                .map((engine, i) => ({
-                    id: engine.id || Date.now() + i,
-                    name: (engine.name || `Engine ${i + 1}`).trim(),
-                    url: (engine.url || '').trim(),
-                    icon: (engine.icon || '').trim()
-                }))
-                .filter(engine => engine.name && engine.url && engine.icon);
-            if (!normalized.length) throw new Error('empty');
-            const migrated = migrateLegacyDefaultEngineList(normalized);
-            if (migrated !== normalized) {
-                localStorage.setItem('myEngines', JSON.stringify(migrated));
-            }
-            return migrated;
+            const migrated = migrateLegacyDefaultEngineList(parsed);
+            const normalized = sanitizeSearchEngineList(migrated);
+            localStorage.setItem('myEngines', JSON.stringify(normalized));
+            return normalized;
         } catch (error) {
-            localStorage.setItem('myEngines', JSON.stringify(defaultEngines));
-            return defaultEngines.slice();
+            const fallback = sanitizeSearchEngineList(defaultEngines);
+            localStorage.setItem('myEngines', JSON.stringify(fallback));
+            return fallback;
         }
     }
 
@@ -95,6 +148,21 @@
     if (engines.length && !engines.some(engine => String(engine.id) === String(activeEngineId))) {
         activeEngineId = engines[0].id;
         localStorage.setItem('myActiveEngine', String(activeEngineId));
+    }
+
+    function syncActiveEngineSelection() {
+        const existing = engines.some(engine => String(engine.id) === String(activeEngineId));
+        if (existing) return;
+        activeEngineId = engines[0]?.id || null;
+        if (activeEngineId !== null && activeEngineId !== undefined) {
+            localStorage.setItem('myActiveEngine', String(activeEngineId));
+        }
+    }
+
+    function persistEnginesToStorage() {
+        engines = sanitizeSearchEngineList(engines);
+        localStorage.setItem('myEngines', JSON.stringify(engines));
+        syncActiveEngineSelection();
     }
 
     const defaultBgLight = "#f2f2f7";
@@ -123,6 +191,7 @@
     const BASE_AUTO_SYNC_PUSH_DEBOUNCE_MS = 1400;
     const BASE_AUTO_SYNC_PULL_DEBOUNCE_MS = 700;
     const BASE_AUTO_SYNC_PULL_MIN_INTERVAL_MS = 4500;
+    const AUTO_SYNC_REMOTE_APPLY_TOLERANCE_MS = 750;
     const WEB_IDLE_VISUALS_TIMEOUT_MS = 1800;
     const FAVICON_SIZE_GRID = 48;
     const FAVICON_SIZE_COMPACT = 24;
@@ -248,18 +317,45 @@
         dropboxTokenStateCache = null;
     }
 
+    function consumeImageFallbackSource(imgEl) {
+        if (!(imgEl instanceof HTMLImageElement)) return '';
+        const rawChain = String(imgEl.dataset.fallbackChain || '').trim();
+        if (rawChain) {
+            let chain = [];
+            try {
+                const parsed = JSON.parse(rawChain);
+                if (Array.isArray(parsed)) {
+                    chain = parsed.map((entry) => String(entry || '').trim()).filter(Boolean);
+                }
+            } catch (error) {
+                chain = rawChain.split('|').map((entry) => entry.trim()).filter(Boolean);
+            }
+            if (chain.length) {
+                const next = chain.shift();
+                if (chain.length) imgEl.dataset.fallbackChain = JSON.stringify(chain);
+                else imgEl.removeAttribute('data-fallback-chain');
+                return next;
+            }
+        }
+        const legacyFallback = String(imgEl.dataset.fallbackSrc || '').trim();
+        if (legacyFallback) {
+            imgEl.removeAttribute('data-fallback-src');
+            return legacyFallback;
+        }
+        return '';
+    }
+
     document.addEventListener('error', (event) => {
         const target = event.target;
         if (!(target instanceof HTMLImageElement)) return;
-        const fallbackSrc = String(target.dataset.fallbackSrc || '').trim();
-        if (!fallbackSrc) return;
-        if (target.dataset.fallbackApplied === '1') {
-            target.removeAttribute('data-fallback-src');
-            target.src = FAVICON_FALLBACK_ICON;
+        const nextSrc = consumeImageFallbackSource(target);
+        if (nextSrc && target.src !== nextSrc) {
+            target.src = nextSrc;
             return;
         }
-        target.dataset.fallbackApplied = '1';
-        target.src = fallbackSrc;
+        if (!String(target.src || '').includes(FAVICON_FALLBACK_ICON)) {
+            target.src = FAVICON_FALLBACK_ICON;
+        }
     }, true);
 
     function createId(prefix) {
@@ -412,8 +508,7 @@
     function suggestIconFromUrl(rawUrl, size = FAVICON_SIZE_GRID) {
         const cleanUrl = normalizeUrl(rawUrl || '');
         if (!cleanUrl) return '';
-        const hostname = getHostname(cleanUrl);
-        return getRemoteFaviconUrl(hostname, size);
+        return getRemoteFaviconUrl(cleanUrl, size);
     }
 
     function applyAutoFillValue(inputEl, nextValue) {
@@ -793,19 +888,29 @@
         }
     }
 
-    function getRemoteFaviconUrl(hostname, size = FAVICON_SIZE_GRID) {
-        if (!hostname) return '';
-        return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=${size}`;
+    function getRemoteFaviconUrl(pageUrlOrHostname, size = FAVICON_SIZE_GRID) {
+        const clean = String(pageUrlOrHostname || '').trim();
+        if (!clean) return '';
+        let domainUrl = '';
+        try {
+            const normalized = /^https?:\/\//i.test(clean) ? clean : `https://${clean}`;
+            const parsed = new URL(normalized);
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+            domainUrl = `${parsed.protocol}//${parsed.hostname}`;
+        } catch (error) {
+            return '';
+        }
+        return `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(domainUrl)}&sz=${encodeURIComponent(String(size || FAVICON_SIZE_GRID))}`;
     }
 
     function getLinkIconSources(url, customIcon = '', size = FAVICON_SIZE_GRID) {
         const custom = String(customIcon || '').trim();
         const cleanUrl = normalizeUrl(url || '');
-        const hostname = getHostname(cleanUrl);
         const chromiumFavicon = getChromiumFaviconUrl(cleanUrl, size);
-        const remoteFavicon = getRemoteFaviconUrl(hostname, size);
+        const remoteFavicon = getRemoteFaviconUrl(cleanUrl, size);
+        const customIsSafe = isLikelyImageIconSource(custom);
 
-        if (custom) {
+        if (custom && customIsSafe) {
             return {
                 src: custom,
                 fallback: chromiumFavicon || remoteFavicon || FAVICON_FALLBACK_ICON
@@ -829,10 +934,24 @@
     function buildFaviconImgAttrs(url, customIcon = '', size = FAVICON_SIZE_GRID) {
         const icon = getLinkIconSources(url, customIcon, size);
         const srcAttr = `src="${escapeHtmlAttr(icon.src || FAVICON_FALLBACK_ICON)}"`;
-        const fallbackAttr = icon.fallback
-            ? ` data-fallback-src="${escapeHtmlAttr(icon.fallback)}"`
+        const fallbackChain = [];
+        const pushUniqueFallback = (value) => {
+            const next = String(value || '').trim();
+            if (!next) return;
+            if (fallbackChain.includes(next)) return;
+            fallbackChain.push(next);
+        };
+        pushUniqueFallback(icon.fallback || '');
+        if ((icon.src || '') !== FAVICON_FALLBACK_ICON) {
+            pushUniqueFallback(FAVICON_FALLBACK_ICON);
+        }
+        const fallbackAttr = fallbackChain.length
+            ? ` data-fallback-src="${escapeHtmlAttr(fallbackChain[0])}"`
             : '';
-        return `${srcAttr}${fallbackAttr}`;
+        const chainAttr = fallbackChain.length > 1
+            ? ` data-fallback-chain="${escapeHtmlAttr(JSON.stringify(fallbackChain))}"`
+            : '';
+        return `${srcAttr}${fallbackAttr}${chainAttr}`;
     }
 
     function shouldRenderLeftSidebar(space = null) {
@@ -1427,6 +1546,14 @@
         return clean.startsWith('/') ? clean : `/${clean}`;
     }
 
+    function isDropboxNotFoundMessage(message) {
+        return /not[_/ -]?found|path\/not_found/i.test(String(message || ''));
+    }
+
+    function isDropboxConflictMessage(message) {
+        return /conflict|not[_/ -]?found|path\/not_found/i.test(String(message || ''));
+    }
+
     async function requestDropboxJson(path, accessToken, options = {}) {
         const response = await fetch(`${DROPBOX_API_RPC_BASE}${path}`, {
             method: options.method || 'POST',
@@ -1440,13 +1567,24 @@
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
             const message = payload?.error_summary || payload?.error || `HTTP ${response.status}`;
-            throw new Error(`Dropbox API error: ${message}`);
+            const error = new Error(`Dropbox API error: ${message}`);
+            error.status = response.status;
+            if (response.status === 409 && isDropboxNotFoundMessage(message)) {
+                error.code = 'DROPBOX_FILE_NOT_FOUND';
+            } else if (response.status === 409 && isDropboxConflictMessage(message)) {
+                error.code = 'DROPBOX_CONFLICT';
+            }
+            throw error;
         }
         return payload;
     }
 
-    async function uploadDropboxSyncFile(accessToken, fileName, jsonText) {
+    async function uploadDropboxSyncFile(accessToken, fileName, jsonText, options = {}) {
         const path = normalizeDropboxPath(fileName);
+        const expectedRev = String(options?.expectedRev || '').trim();
+        const mode = expectedRev
+            ? { '.tag': 'update', update: expectedRev }
+            : 'add';
         const response = await fetch(`${DROPBOX_API_CONTENT_BASE}/files/upload`, {
             method: 'POST',
             headers: {
@@ -1454,10 +1592,10 @@
                 'Content-Type': 'application/octet-stream',
                 'Dropbox-API-Arg': JSON.stringify({
                     path,
-                    mode: 'overwrite',
+                    mode,
                     autorename: false,
                     mute: true,
-                    strict_conflict: false
+                    strict_conflict: true
                 })
             },
             body: jsonText
@@ -1465,9 +1603,20 @@
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
             const message = payload?.error_summary || payload?.error || `HTTP ${response.status}`;
-            throw new Error(`Dropbox upload failed: ${message}`);
+            const error = new Error(`Dropbox upload failed: ${message}`);
+            error.status = response.status;
+            if (response.status === 409 && isDropboxNotFoundMessage(message)) {
+                error.code = 'DROPBOX_FILE_NOT_FOUND';
+            } else if (response.status === 409 && isDropboxConflictMessage(message)) {
+                error.code = 'DROPBOX_CONFLICT';
+            }
+            throw error;
         }
-        return payload;
+        const rev = typeof payload?.rev === 'string' ? payload.rev : '';
+        const serverModifiedRaw = String(payload?.server_modified || '');
+        const serverModifiedTs = Date.parse(serverModifiedRaw);
+        const serverModifiedAt = Number.isFinite(serverModifiedTs) ? serverModifiedTs : 0;
+        return { rev, serverModifiedAt };
     }
 
     async function downloadDropboxSyncFile(accessToken, fileName) {
@@ -1480,11 +1629,15 @@
             }
         });
         if (response.status === 409) {
-            throw new Error('Dropbox file not found');
+            const error = new Error('Dropbox file not found');
+            error.code = 'DROPBOX_FILE_NOT_FOUND';
+            throw error;
         }
         if (!response.ok) {
             const message = await response.text().catch(() => `HTTP ${response.status}`);
-            throw new Error(`Dropbox download failed: ${message}`);
+            const error = new Error(`Dropbox download failed: ${message}`);
+            error.status = response.status;
+            throw error;
         }
         const apiResultRaw = response.headers.get('Dropbox-API-Result') || '';
         let apiResult = {};
@@ -1499,6 +1652,26 @@
         const serverModifiedAt = Number.isFinite(serverModifiedTs) ? serverModifiedTs : 0;
         const text = await response.text();
         return { text, rev, serverModifiedAt };
+    }
+
+    async function getDropboxSyncFileMetadata(accessToken, fileName) {
+        const path = normalizeDropboxPath(fileName);
+        try {
+            const payload = await requestDropboxJson('/files/get_metadata', accessToken, {
+                payload: {
+                    path,
+                    include_deleted: false
+                }
+            });
+            const rev = typeof payload?.rev === 'string' ? payload.rev : '';
+            const serverModifiedRaw = String(payload?.server_modified || '');
+            const serverModifiedTs = Date.parse(serverModifiedRaw);
+            const serverModifiedAt = Number.isFinite(serverModifiedTs) ? serverModifiedTs : 0;
+            return { rev, serverModifiedAt };
+        } catch (error) {
+            if (error?.code === 'DROPBOX_FILE_NOT_FOUND') return { rev: '', serverModifiedAt: 0 };
+            throw error;
+        }
     }
 
     async function getStoredSyncFileHandle() {
@@ -1556,7 +1729,7 @@
         return Number.isFinite(ts) && ts > 0 ? ts : 0;
     }
 
-    async function applySyncedPayload(payload) {
+    async function applySyncedPayload(payload, options = {}) {
         if (!payload || typeof payload !== 'object') return false;
         if (!payload.data && !payload.spaces && !payload.links) return false;
         autoSyncSuppressPush = true;
@@ -1574,7 +1747,9 @@
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
             }
 
-            if (payload.engines) localStorage.setItem('myEngines', JSON.stringify(payload.engines));
+            if (payload.engines) {
+                localStorage.setItem('myEngines', JSON.stringify(sanitizeSearchEngineList(payload.engines)));
+            }
             if (payload.activeEngine) localStorage.setItem('myActiveEngine', String(payload.activeEngine));
             if (payload.bgLight) localStorage.setItem('myBgLight', payload.bgLight);
             if (payload.bgDark) localStorage.setItem('myBgDark', payload.bgDark);
@@ -1593,7 +1768,11 @@
             });
 
             const remoteUpdatedAt = getPayloadUpdatedAt(payload);
-            markLocalDataUpdated(remoteUpdatedAt || Date.now());
+            const sourceUpdatedAt = Number(options?.sourceUpdatedAt || 0);
+            const applyUpdatedAt = Number.isFinite(sourceUpdatedAt) && sourceUpdatedAt > 0
+                ? Math.max(remoteUpdatedAt, sourceUpdatedAt)
+                : remoteUpdatedAt;
+            markLocalDataUpdated(applyUpdatedAt || Date.now());
             localStorage.setItem('airtabSettingsUpdatedAt', String(Date.now()));
 
             data = loadData();
@@ -1692,14 +1871,23 @@
         candidates.sort((a, b) => (Number(b.sortUpdatedAt || 0) - Number(a.sortUpdatedAt || 0)));
         const newest = candidates[0];
         const remoteUpdatedAt = getPayloadUpdatedAt(newest.payload);
+        const remoteReferenceAt = Number(newest.sortUpdatedAt || remoteUpdatedAt || 0);
         const localUpdatedAt = getLocalDataUpdatedAt();
-        const dropboxMeta = getSyncDropboxMeta();
-        const lastAppliedRev = String(dropboxMeta?.lastAppliedRev || '').trim();
-        const revChanged = newest.source === 'dropbox'
-            && !!newest.rev
-            && newest.rev !== lastAppliedRev;
-        if (remoteUpdatedAt && localUpdatedAt && remoteUpdatedAt <= localUpdatedAt && !revChanged) return;
-        const applied = await applySyncedPayload(newest.payload);
+        const dropboxMeta = newest.source === 'dropbox' ? getSyncDropboxMeta() : null;
+        const hasAppliedDropboxSnapshot = !!String(dropboxMeta?.lastAppliedRev || '').trim()
+            || Number(dropboxMeta?.lastAppliedServerModifiedAt || 0) > 0;
+        const hasDropboxPushHistory = Number(dropboxMeta?.lastPushAt || 0) > 0;
+        const allowDropboxBootstrapApply = newest.source === 'dropbox'
+            && !hasAppliedDropboxSnapshot
+            && !hasDropboxPushHistory;
+        if (localUpdatedAt > 0) {
+            // Protect local edits from being reverted by an older cloud snapshot.
+            if (!remoteReferenceAt) return;
+            if (!allowDropboxBootstrapApply && remoteReferenceAt <= (localUpdatedAt + AUTO_SYNC_REMOTE_APPLY_TOLERANCE_MS)) {
+                return;
+            }
+        }
+        const applied = await applySyncedPayload(newest.payload, { sourceUpdatedAt: remoteReferenceAt });
         if (applied && newest.source === 'dropbox') {
             const patch = {};
             if (newest.rev) patch.lastAppliedRev = newest.rev;
@@ -1719,7 +1907,14 @@
         const localNeedsPush = localLinked && localUpdatedAt > localLastPushAt;
         const dropboxMeta = getSyncDropboxMeta();
         const dropboxLastPushAt = Number(dropboxMeta?.lastPushAt || 0);
-        const dropboxNeedsPush = isDropboxSyncConnected(dropboxMeta) && localUpdatedAt > dropboxLastPushAt;
+        const dropboxHasAppliedSnapshot = !!String(dropboxMeta?.lastAppliedRev || '').trim()
+            || Number(dropboxMeta?.lastAppliedServerModifiedAt || 0) > 0;
+        const dropboxHasSyncBaseline = Number(dropboxMeta?.lastPullAt || 0) > 0
+            || dropboxHasAppliedSnapshot
+            || dropboxLastPushAt > 0;
+        const dropboxNeedsPush = isDropboxSyncConnected(dropboxMeta)
+            && dropboxHasSyncBaseline
+            && localUpdatedAt > dropboxLastPushAt;
         return localNeedsPush || dropboxNeedsPush;
     }
 
@@ -1791,10 +1986,42 @@
         if (!isDropboxSyncConnected()) return;
         const accessToken = await requireDropboxAccessTokenForAutoSync();
         const fileName = getDropboxSyncFileName();
-        await uploadDropboxSyncFile(accessToken, fileName, payloadJson);
+        const dropboxMeta = getSyncDropboxMeta();
+        let expectedRev = String(
+            dropboxMeta?.lastSeenRev
+            || dropboxMeta?.lastAppliedRev
+            || dropboxMeta?.lastPushRev
+            || ''
+        ).trim();
+        if (!expectedRev) {
+            const remoteMeta = await getDropboxSyncFileMetadata(accessToken, fileName);
+            if (remoteMeta?.rev) {
+                expectedRev = remoteMeta.rev;
+                setSyncDropboxMeta({
+                    fileName,
+                    lastSeenRev: remoteMeta.rev,
+                    lastSeenServerModifiedAt: remoteMeta.serverModifiedAt || 0
+                });
+            }
+        }
+
+        let uploaded = null;
+        try {
+            uploaded = await uploadDropboxSyncFile(accessToken, fileName, payloadJson, { expectedRev });
+        } catch (error) {
+            if (expectedRev && error?.code === 'DROPBOX_FILE_NOT_FOUND') {
+                // Remote file was recreated/deleted between metadata read and upload attempt.
+                uploaded = await uploadDropboxSyncFile(accessToken, fileName, payloadJson, { expectedRev: '' });
+            } else {
+                throw error;
+            }
+        }
         setSyncDropboxMeta({
             fileName,
             lastPushAt: Date.now(),
+            lastPushRev: uploaded?.rev || '',
+            lastSeenRev: uploaded?.rev || expectedRev || '',
+            lastSeenServerModifiedAt: Number(uploaded?.serverModifiedAt || dropboxMeta?.lastSeenServerModifiedAt || 0),
             lastError: '',
             lastErrorAt: 0
         });
@@ -1841,6 +2068,9 @@
             try {
                 await pushPayloadToDropboxAuto(payloadJson);
             } catch (error) {
+                if (error?.code === 'DROPBOX_CONFLICT') {
+                    scheduleAutoSyncPull({ immediate: true, force: true });
+                }
                 setSyncDropboxMeta({
                     lastError: String(error?.message || 'push error'),
                     lastErrorAt: Date.now()
@@ -6030,7 +6260,7 @@
             if (Number.isNaN(index) || newIndex < 0 || newIndex >= engines.length) return;
             const [moved] = engines.splice(index, 1);
             engines.splice(newIndex, 0, moved);
-            localStorage.setItem('myEngines', JSON.stringify(engines));
+            persistEnginesToStorage();
             renderEngineSettingsList();
             renderSearchDropdown();
             return;
@@ -6089,7 +6319,7 @@
         const newEng = { id: existingId, name, url, icon };
         if (index !== "") engines[index] = newEng;
         else engines.push(newEng);
-        localStorage.setItem('myEngines', JSON.stringify(engines));
+        persistEnginesToStorage();
         renderEngineSettingsList();
         renderSearchDropdown();
         closeModal('engineEditModal');
@@ -6099,7 +6329,7 @@
         const index = document.getElementById('editEngineIndex').value;
         if (index !== "" && engines.length > 1) {
             engines.splice(index, 1);
-            localStorage.setItem('myEngines', JSON.stringify(engines));
+            persistEnginesToStorage();
             renderEngineSettingsList();
             renderSearchDropdown();
             closeModal('engineEditModal');
@@ -6714,7 +6944,7 @@
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
                     data = loadData();
                 }
-                if (imported.engines) localStorage.setItem('myEngines', JSON.stringify(imported.engines));
+                if (imported.engines) localStorage.setItem('myEngines', JSON.stringify(sanitizeSearchEngineList(imported.engines)));
                 if (imported.activeEngine) localStorage.setItem('myActiveEngine', String(imported.activeEngine));
                 if (imported.bgLight) localStorage.setItem('myBgLight', imported.bgLight);
                 if (imported.bgDark) localStorage.setItem('myBgDark', imported.bgDark);
