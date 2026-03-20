@@ -872,6 +872,13 @@
             .replace(/>/g, '&gt;');
     }
 
+    function escapeHtmlText(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
     function getChromiumFaviconUrl(pageUrl, size = FAVICON_SIZE_GRID) {
         const cleanUrl = String(pageUrl || '').trim();
         if (!cleanUrl || !/^https?:\/\//i.test(cleanUrl)) return '';
@@ -2617,16 +2624,19 @@
         const isSelected = selectedIds.has(item.id);
         const selectedClass = isSelected ? 'selected' : '';
         const iconAttrs = buildFaviconImgAttrs(item.url, item.customIcon, FAVICON_SIZE_GRID);
+        const itemIdAttr = escapeHtmlAttr(item.id);
+        const itemUrlAttr = escapeHtmlAttr(item.url);
+        const itemNameText = escapeHtmlText(item.name);
         return `
-            <div class="card-container drag-item ${selectedClass}" draggable="true" data-id="${item.id}" data-type="link">
+            <div class="card-container drag-item ${selectedClass}" draggable="true" data-id="${itemIdAttr}" data-type="link">
                 <div class="select-indicator"></div>
                 <div class="card-box-wrap">
-                    <button type="button" class="edit-btn" data-id="${item.id}" aria-label="${itemActionsLabel}">⋮</button>
-                    <a href="${item.url}" class="card-box" draggable="false">
+                    <button type="button" class="edit-btn" data-id="${itemIdAttr}" aria-label="${escapeHtmlAttr(itemActionsLabel)}">⋮</button>
+                    <a href="${itemUrlAttr}" class="card-box" draggable="false">
                         <img ${iconAttrs} alt="" loading="lazy" decoding="async">
                     </a>
                 </div>
-                <div class="card-text">${item.name}</div>
+                <div class="card-text" data-i18n-skip="1">${itemNameText}</div>
             </div>
         `;
     }
@@ -2637,7 +2647,7 @@
                 <div class="card-box-wrap">
                     <div class="card-box add-btn-box" data-add="square" data-force-type="link">+</div>
                 </div>
-                <div class="card-text">${addLabel}</div>
+                <div class="card-text">${escapeHtmlText(addLabel)}</div>
             </div>
         `;
     }
@@ -2653,7 +2663,7 @@
                 <div class="card-box-wrap">
                     <div class="card-box lazy-load-box">⋯</div>
                 </div>
-                <div class="card-text">${moreLabel}</div>
+                <div class="card-text">${escapeHtmlText(moreLabel)}</div>
             </div>
         `;
     }
@@ -2784,13 +2794,17 @@
                     const selectedClass = isSelected ? 'selected' : '';
                     const childClass = parentId ? 'tree-child' : '';
                     const iconAttrs = buildFaviconImgAttrs(entry.url, entry.customIcon, FAVICON_SIZE_COMPACT);
+                    const entryIdAttr = escapeHtmlAttr(entry.id);
+                    const entryUrlAttr = escapeHtmlAttr(entry.url);
+                    const entryNameText = escapeHtmlText(entry.name);
+                    const parentAttr = parentId ? `data-parent="${escapeHtmlAttr(parentId)}"` : '';
                     return `
-                        <div class="compact-wrapper drag-item ${childClass} ${selectedClass}" draggable="true" data-id="${entry.id}" data-type="link" ${parentId ? `data-parent="${parentId}"` : ''}>
+                        <div class="compact-wrapper drag-item ${childClass} ${selectedClass}" draggable="true" data-id="${entryIdAttr}" data-type="link" ${parentAttr}>
                             <div class="select-indicator"></div>
-                            <button type="button" class="edit-btn" data-id="${entry.id}" ${parentId ? 'data-scope="folder"' : ''} aria-label="${itemActionsLabel}">⋮</button>
-                            <a href="${entry.url}" class="compact-card" draggable="false">
+                            <button type="button" class="edit-btn" data-id="${entryIdAttr}" ${parentId ? 'data-scope="folder"' : ''} aria-label="${escapeHtmlAttr(itemActionsLabel)}">⋮</button>
+                            <a href="${entryUrlAttr}" class="compact-card" draggable="false">
                                 <img ${iconAttrs} alt="" loading="lazy" decoding="async">
-                                <span>${entry.name}</span>
+                                <span data-i18n-skip="1">${entryNameText}</span>
                             </a>
                         </div>
                     `;
@@ -2806,30 +2820,34 @@
                     const hasChildren = (folder.items || []).length > 0;
                     const gradientStyle = getFolderGradientStyle(folder);
                     const styleAttr = gradientStyle ? `style="--folder-bg: ${gradientStyle};"` : '';
+                    const folderIdAttr = escapeHtmlAttr(folder.id);
+                    const folderNameText = escapeHtmlText(folder.name || folderLabel);
+                    const folderEmojiText = escapeHtmlText(folder.emoji);
+                    const parentAttr = parentId ? `data-parent="${escapeHtmlAttr(parentId)}"` : '';
                     return `
-                        <div class="tree-folder ${isCollapsed ? '' : 'expanded'} ${isMenuOpen ? 'menu-open' : ''} drag-item ${selectedClass}" draggable="true" data-id="${folder.id}" data-type="folder" ${parentId ? `data-parent="${parentId}"` : ''} ${styleAttr}>
+                        <div class="tree-folder ${isCollapsed ? '' : 'expanded'} ${isMenuOpen ? 'menu-open' : ''} drag-item ${selectedClass}" draggable="true" data-id="${folderIdAttr}" data-type="folder" ${parentAttr} ${styleAttr}>
                             <div class="select-indicator"></div>
-                            <button type="button" class="folder-toggle ${hasEmoji ? 'is-emoji' : ''}" data-action="toggle" aria-label="${isCollapsed ? expandFolderLabel : collapseFolderLabel}">
+                            <button type="button" class="folder-toggle ${hasEmoji ? 'is-emoji' : ''}" data-action="toggle" aria-label="${escapeHtmlAttr(isCollapsed ? expandFolderLabel : collapseFolderLabel)}">
                                 ${hasEmoji
-                                    ? `${folder.emoji}`
+                                    ? `${folderEmojiText}`
                                     : `<span class="folder-svg icon-closed">${folderClosedSvg}</span>
                                        <span class="folder-svg icon-open">${folderOpenSvg}</span>`
                                 }
                             </button>
-                            <span class="tree-name">${folder.name || folderLabel}</span>
+                            <span class="tree-name" data-i18n-skip="1">${folderNameText}</span>
                             <div class="tree-actions">
-                                <button type="button" class="tree-btn" data-action="menu" title="${folderActionsLabel}" aria-label="${folderActionsLabel}">⋮</button>
+                                <button type="button" class="tree-btn" data-action="menu" title="${escapeHtmlAttr(folderActionsLabel)}" aria-label="${escapeHtmlAttr(folderActionsLabel)}">⋮</button>
                             </div>
                             ${isMenuOpen ? `
-                                <div class="tree-menu" data-menu="${folder.id}">
-                                    <button type="button" class="tree-menu-btn" data-action="edit">${editLabel}</button>
-                                    <button type="button" class="tree-menu-btn" data-action="open-tabs">${openTabsLabel}</button>
-                                    <button type="button" class="tree-menu-btn danger" data-action="delete">${deleteLabel}</button>
+                                <div class="tree-menu" data-menu="${folderIdAttr}">
+                                    <button type="button" class="tree-menu-btn" data-action="edit">${escapeHtmlText(editLabel)}</button>
+                                    <button type="button" class="tree-menu-btn" data-action="open-tabs">${escapeHtmlText(openTabsLabel)}</button>
+                                    <button type="button" class="tree-menu-btn danger" data-action="delete">${escapeHtmlText(deleteLabel)}</button>
                                 </div>
                             ` : ''}
                         </div>
                         ${hasChildren ? `
-                            <div class="tree-children ${isCollapsed ? '' : 'expanded'}" data-parent="${folder.id}">
+                            <div class="tree-children ${isCollapsed ? '' : 'expanded'}" data-parent="${folderIdAttr}">
                                 ${renderTreeItems(folder.items || [], folder.id)}
                             </div>
                         ` : ''}
@@ -2869,6 +2887,7 @@
         applyAdaptiveMemoryMode(getActiveSpace());
         const folderCards = [];
         const itemActionsLabel = trKey('itemActions', 'Действия элемента');
+        const moveOutLabel = trKey('moveOutFolder', 'Вынести из папки');
 
         if (!currentFolderContext) return;
         const space = getActiveSpace();
@@ -2886,29 +2905,32 @@
                 folderView === 'grid' ? FAVICON_SIZE_GRID : FAVICON_SIZE_COMPACT
             );
             const selectedClass = selectedIds.has(item.id) ? 'selected' : '';
+            const itemIdAttr = escapeHtmlAttr(item.id);
+            const itemUrlAttr = escapeHtmlAttr(item.url);
+            const itemNameText = escapeHtmlText(item.name);
             if (folderView === 'grid') {
                 folderCards.push(`
-                    <div class="card-container drag-item ${selectedClass}" draggable="true" data-id="${item.id}" data-type="link" data-scope="folder">
+                    <div class="card-container drag-item ${selectedClass}" draggable="true" data-id="${itemIdAttr}" data-type="link" data-scope="folder">
                         <div class="select-indicator"></div>
                         <div class="card-box-wrap">
-                            <button type="button" class="move-out-btn" data-id="${item.id}" title="Вынести" aria-label="Вынести из папки">↗</button>
-                            <button type="button" class="edit-btn" data-id="${item.id}" data-scope="folder" aria-label="${itemActionsLabel}">⋮</button>
-                            <a href="${item.url}" class="card-box" draggable="false">
+                            <button type="button" class="move-out-btn" data-id="${itemIdAttr}" title="${escapeHtmlAttr(moveOutLabel)}" aria-label="${escapeHtmlAttr(moveOutLabel)}">↗</button>
+                            <button type="button" class="edit-btn" data-id="${itemIdAttr}" data-scope="folder" aria-label="${escapeHtmlAttr(itemActionsLabel)}">⋮</button>
+                            <a href="${itemUrlAttr}" class="card-box" draggable="false">
                                 <img ${iconAttrs} alt="" loading="lazy" decoding="async">
                             </a>
                         </div>
-                        <div class="card-text">${item.name}</div>
+                        <div class="card-text" data-i18n-skip="1">${itemNameText}</div>
                     </div>
                 `);
             } else {
                 folderCards.push(`
-                    <div class="compact-wrapper drag-item ${selectedClass}" draggable="true" data-id="${item.id}" data-type="link" data-scope="folder">
+                    <div class="compact-wrapper drag-item ${selectedClass}" draggable="true" data-id="${itemIdAttr}" data-type="link" data-scope="folder">
                         <div class="select-indicator"></div>
-                        <button type="button" class="move-out-btn" data-id="${item.id}" title="Вынести" aria-label="Вынести из папки">↗</button>
-                        <button type="button" class="edit-btn" data-id="${item.id}" data-scope="folder" aria-label="${itemActionsLabel}">⋮</button>
-                        <a href="${item.url}" class="compact-card" draggable="false">
+                        <button type="button" class="move-out-btn" data-id="${itemIdAttr}" title="${escapeHtmlAttr(moveOutLabel)}" aria-label="${escapeHtmlAttr(moveOutLabel)}">↗</button>
+                        <button type="button" class="edit-btn" data-id="${itemIdAttr}" data-scope="folder" aria-label="${escapeHtmlAttr(itemActionsLabel)}">⋮</button>
+                        <a href="${itemUrlAttr}" class="compact-card" draggable="false">
                             <img ${iconAttrs} alt="" loading="lazy" decoding="async">
-                            <span>${item.name}</span>
+                            <span data-i18n-skip="1">${itemNameText}</span>
                         </a>
                     </div>
                 `);
@@ -2924,9 +2946,12 @@
         const activeEngine = engines.find(e => e.id == activeEngineId) || engines[0];
         if (activeEngine) document.getElementById('currentEngineIcon').src = activeEngine.icon;
         engines.forEach(eng => {
+            const engineIdAttr = escapeHtmlAttr(eng.id);
+            const engineNameAttr = escapeHtmlAttr(eng.name);
+            const engineIconAttr = escapeHtmlAttr(eng.icon);
             menuItems.push(`
-                <button type="button" class="engine-list-item" data-id="${eng.id}" title="${eng.name}" aria-label="${chooseEngineLabel}">
-                    <img src="${eng.icon}" alt="${eng.name}">
+                <button type="button" class="engine-list-item" data-id="${engineIdAttr}" title="${engineNameAttr}" data-i18n-skip-title="1" aria-label="${escapeHtmlAttr(chooseEngineLabel)}">
+                    <img src="${engineIconAttr}" alt="${engineNameAttr}">
                 </button>
             `);
         });
@@ -3003,16 +3028,21 @@
     function renderEngineSettingsList() {
         const list = document.getElementById('engineSettingsList');
         const rows = [];
+        const moveUpLabel = trKey('moveUp', 'Сдвинуть вверх');
+        const moveDownLabel = trKey('moveDown', 'Сдвинуть вниз');
+        const editSearchEngineLabel = trKey('editSearchEngine', 'Редактировать поисковик');
         engines.forEach((eng, i) => {
             const isFirst = i === 0;
             const isLast = i === engines.length - 1;
+            const engineNameText = escapeHtmlText(eng.name);
+            const engineIconAttr = escapeHtmlAttr(eng.icon);
             rows.push(`
                 <div class="engine-settings-item settings-item" data-index="${i}">
-                    <span><img src="${eng.icon}"> ${eng.name}</span>
+                    <span data-i18n-skip="1"><img src="${engineIconAttr}"> ${engineNameText}</span>
                     <div class="engine-controls">
-                        <button type="button" class="move-btn" data-action="up" data-index="${i}" ${isFirst ? 'disabled' : ''} aria-label="Сдвинуть вверх">↑</button>
-                        <button type="button" class="move-btn" data-action="down" data-index="${i}" ${isLast ? 'disabled' : ''} aria-label="Сдвинуть вниз">↓</button>
-                        <button type="button" class="edit-engine-btn" data-index="${i}" aria-label="Редактировать поисковик">✎</button>
+                        <button type="button" class="move-btn" data-action="up" data-index="${i}" ${isFirst ? 'disabled' : ''} aria-label="${escapeHtmlAttr(moveUpLabel)}">↑</button>
+                        <button type="button" class="move-btn" data-action="down" data-index="${i}" ${isLast ? 'disabled' : ''} aria-label="${escapeHtmlAttr(moveDownLabel)}">↓</button>
+                        <button type="button" class="edit-engine-btn" data-index="${i}" aria-label="${escapeHtmlAttr(editSearchEngineLabel)}">✎</button>
                     </div>
                 </div>
             `);
@@ -3025,9 +3055,12 @@
         const rows = [];
         data.spaces.forEach((space, i) => {
             const activeMark = space.id === data.activeSpaceId ? '• ' : '';
+            const spaceIdAttr = escapeHtmlAttr(space.id);
+            const spaceEmojiText = escapeHtmlText(space.emoji || '🧭');
+            const spaceNameText = escapeHtmlText(space.name);
             rows.push(`
-                <div class="space-settings-item settings-item" data-index="${i}" data-id="${space.id}">
-                    <span>${activeMark}${space.emoji || '🧭'} ${space.name}</span>
+                <div class="space-settings-item settings-item" data-index="${i}" data-id="${spaceIdAttr}">
+                    <span data-i18n-skip="1">${activeMark}${spaceEmojiText} ${spaceNameText}</span>
                 </div>
             `);
         });
@@ -3037,12 +3070,17 @@
     function renderSpaces() {
         const strip = document.getElementById('spacesStrip');
         const pills = [];
+        const switchSpaceLabel = trKey('switchSpace', 'Переключить пространство');
         data.spaces.forEach(space => {
             const isActive = space.id === data.activeSpaceId;
+            const spaceIdAttr = escapeHtmlAttr(space.id);
+            const spaceNameAttr = escapeHtmlAttr(space.name);
+            const spaceNameText = escapeHtmlText(space.name);
+            const spaceEmojiText = escapeHtmlText(space.emoji || '🧭');
             pills.push(`
-                <button type="button" class="space-pill ${isActive ? 'active' : ''}" data-id="${space.id}" title="${space.name}" draggable="true" aria-label="Переключить пространство">
-                    <span class="space-emoji">${space.emoji || '🧭'}</span>
-                    <span class="space-name">${space.name}</span>
+                <button type="button" class="space-pill ${isActive ? 'active' : ''}" data-id="${spaceIdAttr}" title="${spaceNameAttr}" data-i18n-skip-title="1" draggable="true" aria-label="${escapeHtmlAttr(switchSpaceLabel)}">
+                    <span class="space-emoji">${spaceEmojiText}</span>
+                    <span class="space-name" data-i18n-skip="1">${spaceNameText}</span>
                 </button>
             `);
         });
