@@ -2331,9 +2331,9 @@
             root.style.setProperty('--text-color', '#1b1b1f');
             root.style.setProperty('--on-surface', '#1b1b1f');
             root.style.setProperty('--surface-0', '#f6f1f9');
-            root.style.setProperty('--surface-1', 'rgba(255,255,255,0.86)');
-            root.style.setProperty('--surface-2', 'rgba(255,255,255,0.74)');
-            root.style.setProperty('--surface-3', 'rgba(255,255,255,0.62)');
+            root.style.setProperty('--surface-1', '#ffffff');
+            root.style.setProperty('--surface-2', '#f3f3f7');
+            root.style.setProperty('--surface-3', '#e7e7ee');
             root.style.setProperty('--outline', 'rgba(28,27,31,0.18)');
             root.style.setProperty('--text-shadow', 'none');
             root.style.setProperty('--shadow-1', '0 10px 24px rgba(0,0,0,0.12)');
@@ -2345,9 +2345,9 @@
             root.style.setProperty('--text-color', '#f4eff4');
             root.style.setProperty('--on-surface', '#f4eff4');
             root.style.setProperty('--surface-0', '#101014');
-            root.style.setProperty('--surface-1', 'rgba(28,27,31,0.82)');
-            root.style.setProperty('--surface-2', 'rgba(40,39,43,0.78)');
-            root.style.setProperty('--surface-3', 'rgba(54,52,60,0.72)');
+            root.style.setProperty('--surface-1', '#1c1b1f');
+            root.style.setProperty('--surface-2', '#28272b');
+            root.style.setProperty('--surface-3', '#36343c');
             root.style.setProperty('--outline', 'rgba(255,255,255,0.16)');
             root.style.setProperty('--text-shadow', '0 1px 6px rgba(0,0,0,0.5)');
             root.style.setProperty('--shadow-1', '0 12px 28px rgba(0,0,0,0.32)');
@@ -2369,7 +2369,7 @@
             document.body.style.backgroundColor = preloadColor;
             document.body.style.backgroundImage = `url('${bgValue}')`;
             setDarkTokens();
-            root.style.setProperty('--overlay-opacity', '0.32');
+            root.style.setProperty('--overlay-opacity', '0');
         }
 
         persistPrepaintBackground(bgValue, preloadColor);

@@ -68,9 +68,9 @@
             --tertiary: #ff8a65;
 
             --surface-0: #101014;
-            --surface-1: rgba(28,27,31,0.82);
-            --surface-2: rgba(40,39,43,0.78);
-            --surface-3: rgba(54,52,60,0.72);
+            --surface-1: #1c1b1f;
+            --surface-2: #28272b;
+            --surface-3: #36343c;
             --on-surface: #f4eff4;
             --outline: rgba(255,255,255,0.16);
             --scrim: rgba(0,0,0,0.25);
@@ -89,7 +89,7 @@
 
             --text-color: var(--on-surface);
             --text-shadow: 0 2px 10px rgba(0,0,0,0.3);
-            --overlay-opacity: 0.25;
+            --overlay-opacity: 0;
             --initial-bg: #f2f2f7;
             --card-bg: rgba(255,255,255,0.9);
         }
@@ -645,7 +645,7 @@
             transition: background var(--motion-fast), border-color var(--motion-fast), box-shadow var(--motion-fast);
             box-shadow: var(--shadow-1);
             flex-shrink: 0;
-            backdrop-filter: blur(10px);
+            backdrop-filter: none;
             position: relative;
             z-index: 20;
         }
@@ -692,7 +692,7 @@
             gap: 6px;
             box-shadow: var(--shadow-2);
             z-index: 50;
-            backdrop-filter: blur(12px);
+            backdrop-filter: none;
         }
         .engine-list.active { display: flex; }
         .engine-list-item {
@@ -1005,7 +1005,7 @@
             text-decoration: none;
             box-sizing: border-box;
             border: 1px solid var(--outline);
-            backdrop-filter: blur(10px);
+            backdrop-filter: none;
         }
         .card-box img { width: 40px; height: 40px; object-fit: contain; pointer-events: none; border-radius: 12px; }
         .card-text { margin-top: 8px; font-size: 12px; font-weight: 600; color: var(--text-color); text-shadow: var(--text-shadow); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; pointer-events: none; }
@@ -1275,7 +1275,7 @@
             height: 54px;
             border-radius: 22px;
             border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--outline));
-            background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+            background: var(--surface-2);
             color: var(--text-color);
             box-shadow: var(--shadow-2);
             font-size: 22px;
@@ -1307,12 +1307,12 @@
             border-radius: var(--radius-full);
             background: var(--surface-2);
             border: 1px solid var(--outline);
-            backdrop-filter: blur(14px);
+            backdrop-filter: none;
             z-index: 9;
             box-shadow: var(--shadow-1);
         }
         .space-arrow, .space-add {
-            background: rgba(255,255,255,0.1);
+            background: var(--surface-3);
             border: none;
             color: var(--text-color);
             width: 34px;
@@ -1324,7 +1324,7 @@
             justify-content: center;
             font-size: 18px;
         }
-        .space-arrow:hover, .space-add:hover { background: rgba(255,255,255,0.2); }
+        .space-arrow:hover, .space-add:hover { background: var(--surface-1); }
         .space-add.drop-target {
             background: color-mix(in srgb, var(--primary-container) 86%, var(--surface-1));
             box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 32%, transparent);
@@ -1342,7 +1342,7 @@
         }
         .spaces-strip::-webkit-scrollbar { display: none; }
         .space-pill {
-            background: rgba(255,255,255,0.08);
+            background: var(--surface-3);
             border: 1px solid transparent;
             color: var(--text-color);
             border-radius: var(--radius-full);
@@ -1493,7 +1493,7 @@
             background: rgba(7, 10, 18, 0.82);
             color: #e7f0ff;
             box-shadow: var(--shadow-2);
-            backdrop-filter: blur(8px);
+            backdrop-filter: none;
             z-index: 140;
             pointer-events: none;
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
@@ -1540,7 +1540,7 @@
             visibility: hidden;
             pointer-events: none;
             transition: opacity var(--motion-fast);
-            backdrop-filter: blur(4px);
+            backdrop-filter: none;
         }
         .modal.active { opacity: 1; visibility: visible; pointer-events: auto; }
         .modal-content {
@@ -1763,7 +1763,7 @@
             box-shadow: var(--shadow-2);
             display: none;
             width: min(360px, 92vw);
-            backdrop-filter: blur(12px);
+            backdrop-filter: none;
         }
         .emoji-search {
             width: calc(100% - 20px);
@@ -2230,13 +2230,13 @@
             --motion-fast: 140ms cubic-bezier(0.2, 0, 0, 1);
             --motion-med: 210ms cubic-bezier(0.2, 0, 0, 1);
             --motion-slow: 320ms cubic-bezier(0.2, 0, 0, 1);
-            --overlay-opacity: 0.22;
+            --overlay-opacity: 0;
         }
         html[data-airtab-browser="safari"] {
             --motion-fast: 120ms cubic-bezier(0.2, 0, 0, 1);
             --motion-med: 180ms cubic-bezier(0.2, 0, 0, 1);
             --motion-slow: 280ms cubic-bezier(0.2, 0, 0, 1);
-            --overlay-opacity: 0.18;
+            --overlay-opacity: 0;
         }
         html[data-airtab-browser="firefox"] .search-wrapper,
         html[data-airtab-browser="firefox"] .spaces-nav,
