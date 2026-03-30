@@ -43,6 +43,7 @@
     <script>
         (() => {
             const messageType = 'airtab-dropbox-oauth-callback';
+            const oauthResultStorageKey = 'airtabDropboxOauthResult';
             const callbackUrl = window.location.href;
             const payload = { type: messageType, url: callbackUrl };
             const decodeStatePayload = (value) => {
@@ -60,9 +61,19 @@
                     return null;
                 }
             };
+            const statePayload = decodeStatePayload(new URL(callbackUrl).searchParams.get('state'));
+            const redirectFlow = statePayload?.flow === 'redirect';
+            const safeReturnTo = (() => {
+                const raw = String(statePayload?.returnTo || '').trim();
+                if (!raw) return '';
+                try {
+                    const parsed = new URL(raw, window.location.href);
+                    return parsed.origin === window.location.origin ? parsed.toString() : '';
+                } catch (error) {
+                    return '';
+                }
+            })();
             const notifyExtensionDirectly = async () => {
-                const stateRaw = new URL(callbackUrl).searchParams.get('state');
-                const statePayload = decodeStatePayload(stateRaw);
                 const extensionId = String(statePayload?.extId || '').trim();
                 if (!extensionId) return false;
                 const runtimeApi = globalThis.chrome?.runtime;
@@ -77,6 +88,17 @@
                     }
                 });
             };
+            if (redirectFlow) {
+                try {
+                    sessionStorage.setItem(oauthResultStorageKey, JSON.stringify({ url: callbackUrl }));
+                } catch (error) {
+                    // best effort
+                }
+                if (safeReturnTo) {
+                    window.location.replace(safeReturnTo);
+                    return;
+                }
+            }
             try {
                 if (window.opener && !window.opener.closed) {
                     window.opener.postMessage(payload, '*');

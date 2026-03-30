@@ -61,6 +61,9 @@
     const DROPBOX_API_CONTENT_BASE = 'https://content.dropboxapi.com/2';
     const DROPBOX_WEB_CALLBACK_PATH = 'oauth/dropbox-callback.html';
     const DROPBOX_WEB_OAUTH_MESSAGE_TYPE = 'airtab-dropbox-oauth-callback';
+    const DROPBOX_WEB_OAUTH_PENDING_KEY = 'airtabDropboxOauthPending';
+    const DROPBOX_WEB_OAUTH_RESULT_KEY = 'airtabDropboxOauthResult';
+    const DROPBOX_WEB_OAUTH_REDIRECT_SENTINEL = '__airtab_dropbox_oauth_redirect__';
 
     const statusEl = document.getElementById('status');
     const engineList = document.getElementById('engineList');
@@ -924,9 +927,66 @@
         return output;
     }
 
+    function decodeBase64UrlJson(value) {
+        const raw = String(value || '').trim();
+        if (!raw) return null;
+        try {
+            const normalized = raw.replace(/-/g, '+').replace(/_/g, '/');
+            const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+            const decoded = atob(padded);
+            const bytes = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
+            const text = new TextDecoder().decode(bytes);
+            const parsed = JSON.parse(text);
+            return parsed && typeof parsed === 'object' ? parsed : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
     async function buildCodeChallenge(codeVerifier) {
         const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(codeVerifier));
         return base64UrlEncode(digest);
+    }
+
+    function readSessionJson(key, fallback = null) {
+        try {
+            const raw = sessionStorage.getItem(key);
+            if (!raw) return fallback;
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === 'object' ? parsed : fallback;
+        } catch (error) {
+            return fallback;
+        }
+    }
+
+    function writeSessionJson(key, value) {
+        try {
+            if (value === null || value === undefined) {
+                sessionStorage.removeItem(key);
+                return;
+            }
+            sessionStorage.setItem(key, JSON.stringify(value));
+        } catch (error) {
+            // best effort
+        }
+    }
+
+    function getPendingDropboxOAuth() {
+        return readSessionJson(DROPBOX_WEB_OAUTH_PENDING_KEY, null);
+    }
+
+    function setPendingDropboxOAuth(value) {
+        writeSessionJson(DROPBOX_WEB_OAUTH_PENDING_KEY, value);
+    }
+
+    function clearPendingDropboxOAuth() {
+        writeSessionJson(DROPBOX_WEB_OAUTH_PENDING_KEY, null);
+    }
+
+    function consumeDropboxOAuthRedirectResult() {
+        const value = readSessionJson(DROPBOX_WEB_OAUTH_RESULT_KEY, null);
+        writeSessionJson(DROPBOX_WEB_OAUTH_RESULT_KEY, null);
+        return value;
     }
 
     function getDropboxRedirectUri() {
@@ -1009,6 +1069,28 @@
         return launchWebAuthFlowPopup(url, interactive);
     }
 
+    async function finalizeDropboxOAuthCallback(callbackUrl, pending) {
+        const callback = new URL(String(callbackUrl || ''));
+        const callbackState = callback.searchParams.get('state');
+        if (!callbackState || callbackState !== pending.state) throw new Error('Dropbox OAuth state mismatch');
+        const oauthError = callback.searchParams.get('error');
+        if (oauthError) throw new Error(`Dropbox OAuth error: ${oauthError}`);
+        const code = callback.searchParams.get('code');
+        if (!code) throw new Error('Dropbox OAuth code missing');
+
+        const tokenResponse = await requestDropboxToken({
+            code,
+            client_id: pending.appKey,
+            code_verifier: pending.codeVerifier,
+            redirect_uri: pending.redirectUri,
+            grant_type: 'authorization_code'
+        });
+        const previousTokenState = await getGoogleSyncTokenState();
+        const statePayload = buildDropboxTokenState(pending.appKey, tokenResponse, previousTokenState);
+        await setGoogleSyncTokenState(statePayload);
+        return statePayload;
+    }
+
     async function requestDropboxToken(bodyParams) {
         const response = await fetch(DROPBOX_OAUTH_TOKEN_URL, {
             method: 'POST',
@@ -1052,7 +1134,12 @@
     async function authorizeDropboxInteractive(appKey) {
         if (!appKey) throw new Error(trKey('dropboxAppKeyNotSet', 'Dropbox App Key не задан'));
         const redirectUri = getDropboxRedirectUri();
-        const state = createRandomString(24);
+        const statePayload = {
+            nonce: createRandomString(24),
+            flow: extensionApi?.identity?.launchWebAuthFlow ? 'extension' : 'redirect',
+            returnTo: String(window.location.href || '').trim()
+        };
+        const state = base64UrlEncode(new TextEncoder().encode(JSON.stringify(statePayload)));
         const codeVerifier = createRandomString(96);
         const codeChallenge = await buildCodeChallenge(codeVerifier);
         const authUrl = new URL(DROPBOX_OAUTH_AUTHORIZE_URL);
@@ -1065,26 +1152,67 @@
         authUrl.searchParams.set('code_challenge', codeChallenge);
         authUrl.searchParams.set('code_challenge_method', 'S256');
 
-        const callbackUrl = await launchWebAuthFlow(authUrl.toString(), true);
-        const callback = new URL(callbackUrl);
-        const callbackState = callback.searchParams.get('state');
-        if (!callbackState || callbackState !== state) throw new Error('Dropbox OAuth state mismatch');
-        const oauthError = callback.searchParams.get('error');
-        if (oauthError) throw new Error(`Dropbox OAuth error: ${oauthError}`);
-        const code = callback.searchParams.get('code');
-        if (!code) throw new Error('Dropbox OAuth code missing');
+        const pending = {
+            state,
+            appKey,
+            codeVerifier,
+            redirectUri,
+            createdAt: Date.now()
+        };
 
-        const tokenResponse = await requestDropboxToken({
-            code,
-            client_id: appKey,
-            code_verifier: codeVerifier,
-            redirect_uri: redirectUri,
-            grant_type: 'authorization_code'
-        });
-        const previousTokenState = await getGoogleSyncTokenState();
-        const statePayload = buildDropboxTokenState(appKey, tokenResponse, previousTokenState);
-        await setGoogleSyncTokenState(statePayload);
-        return statePayload;
+        if (!extensionApi?.identity?.launchWebAuthFlow) {
+            setPendingDropboxOAuth(pending);
+            window.location.assign(authUrl.toString());
+            throw new Error(DROPBOX_WEB_OAUTH_REDIRECT_SENTINEL);
+        }
+
+        const callbackUrl = await launchWebAuthFlow(authUrl.toString(), true);
+        return await finalizeDropboxOAuthCallback(callbackUrl, pending);
+    }
+
+    async function resumePendingDropboxOAuthRedirectFlow() {
+        const pending = getPendingDropboxOAuth();
+        const result = consumeDropboxOAuthRedirectResult();
+        if (!pending || !result?.url) return false;
+
+        try {
+            await finalizeDropboxOAuthCallback(result.url, pending);
+            clearPendingDropboxOAuth();
+            clearGoogleSyncError();
+            setSyncGoogleMeta({ connectedAt: Date.now() });
+            setSyncUiMode('dropbox');
+            try {
+                await syncPullFromGoogleDrive({ interactive: false });
+                showStatus(trKey('syncFromDropboxDone', 'Синхронизация из Dropbox выполнена.'));
+            } catch (pullError) {
+                const pullMessage = String(pullError?.message || '');
+                const cloudFileMissing = pullError?.code === 'DROPBOX_FILE_NOT_FOUND'
+                    || /not[_/ -]?found/i.test(pullMessage);
+                if (cloudFileMissing) {
+                    await syncPushToGoogleDrive({ interactive: false });
+                    showStatus(
+                        trKey(
+                            'dropboxConnectedSeeded',
+                            'Dropbox подключен. Облачный sync-файл не найден, создан новый из текущих данных.'
+                        )
+                    );
+                } else {
+                    throw pullError;
+                }
+            }
+            return true;
+        } catch (error) {
+            const message = error?.message || trKey('genericError', 'ошибка');
+            setGoogleSyncError(message);
+            showStatus(
+                trKey('dropboxConnectFailed', 'Dropbox не подключен: {error}', { error: message }),
+                'error'
+            );
+            return false;
+        } finally {
+            clearPendingDropboxOAuth();
+            await updateSyncUi().catch(() => {});
+        }
     }
 
     async function refreshDropboxAccessToken(appKey, refreshToken) {
@@ -2818,6 +2946,9 @@
                 connected = true;
                 setSyncUiMode('dropbox');
             } catch (error) {
+                if (String(error?.message || '') === DROPBOX_WEB_OAUTH_REDIRECT_SENTINEL) {
+                    return;
+                }
                 const message = error?.message || trKey('genericError', 'ошибка');
                 setGoogleSyncError(message);
                 showStatus(
@@ -2946,6 +3077,7 @@
     updateBookmarkTargetSpaceVisibility();
     applySyncModeUi();
     updateSyncUi().catch(() => {});
+    resumePendingDropboxOAuthRedirectFlow().catch(() => {});
     if (i18n) i18n.translateDocument(document.body);
     };
 
