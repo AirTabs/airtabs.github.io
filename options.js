@@ -52,7 +52,7 @@
     const SYNC_LAST_LOCAL_UPDATED_AT_KEY = 'airtabSyncLastLocalUpdatedAt';
     const SYNC_UI_MODE_KEY = 'airtabSyncUiMode';
     const DEFAULT_GOOGLE_SYNC_FILE = 'AirTab.sync.json';
-    const DROPBOX_SCOPE = 'files.content.read files.content.write';
+    const DROPBOX_SCOPE = 'files.content.read files.content.write files.metadata.read';
     const DROPBOX_APP_KEY_DEFAULT = '714cwwsa9yxk7tn';
     const DROPBOX_APP_KEY_STORAGE_KEY = 'airtabDropboxAppKey';
     const DROPBOX_OAUTH_AUTHORIZE_URL = 'https://www.dropbox.com/oauth2/authorize';
@@ -2812,9 +2812,23 @@
     const btnGoogleConnect = document.getElementById('btnGoogleConnect');
     if (btnGoogleConnect) {
         btnGoogleConnect.addEventListener('click', async () => {
+            let connected = false;
             try {
                 await connectGoogleDriveSync();
+                connected = true;
                 setSyncUiMode('dropbox');
+            } catch (error) {
+                const message = error?.message || trKey('genericError', 'ошибка');
+                setGoogleSyncError(message);
+                showStatus(
+                    trKey('dropboxConnectFailed', 'Dropbox не подключен: {error}', { error: message }),
+                    'error'
+                );
+                await updateSyncUi().catch(() => {});
+                return;
+            }
+
+            try {
                 try {
                     await syncPullFromGoogleDrive({ interactive: false });
                     showStatus(trKey('syncFromDropboxDone', 'Синхронизация из Dropbox выполнена.'));
@@ -2837,11 +2851,15 @@
             } catch (error) {
                 const message = error?.message || trKey('genericError', 'ошибка');
                 setGoogleSyncError(message);
-                showStatus(
-                    trKey('dropboxConnectFailed', 'Dropbox не подключен: {error}', { error: message }),
-                    'error'
-                );
+                showStatus(trKey(
+                    'dropboxConnectedSyncFailed',
+                    'Dropbox подключен, но первичная синхронизация не удалась: {error}',
+                    { error: message }
+                ), 'error');
             } finally {
+                if (!connected) {
+                    clearGoogleSyncError();
+                }
                 await updateSyncUi().catch(() => {});
             }
         });

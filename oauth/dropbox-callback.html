@@ -43,7 +43,40 @@
     <script>
         (() => {
             const messageType = 'airtab-dropbox-oauth-callback';
-            const payload = { type: messageType, url: window.location.href };
+            const callbackUrl = window.location.href;
+            const payload = { type: messageType, url: callbackUrl };
+            const decodeStatePayload = (value) => {
+                const raw = String(value || '').trim();
+                if (!raw) return null;
+                try {
+                    const normalized = raw.replace(/-/g, '+').replace(/_/g, '/');
+                    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+                    const decoded = atob(padded);
+                    const bytes = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
+                    const text = new TextDecoder().decode(bytes);
+                    const parsed = JSON.parse(text);
+                    return parsed && typeof parsed === 'object' ? parsed : null;
+                } catch (error) {
+                    return null;
+                }
+            };
+            const notifyExtensionDirectly = async () => {
+                const stateRaw = new URL(callbackUrl).searchParams.get('state');
+                const statePayload = decodeStatePayload(stateRaw);
+                const extensionId = String(statePayload?.extId || '').trim();
+                if (!extensionId) return false;
+                const runtimeApi = globalThis.chrome?.runtime;
+                if (!runtimeApi?.sendMessage) return false;
+                return await new Promise((resolve) => {
+                    try {
+                        runtimeApi.sendMessage(extensionId, payload, () => {
+                            resolve(!runtimeApi.lastError);
+                        });
+                    } catch (error) {
+                        resolve(false);
+                    }
+                });
+            };
             try {
                 if (window.opener && !window.opener.closed) {
                     window.opener.postMessage(payload, '*');
@@ -51,9 +84,14 @@
             } catch (error) {
                 // ignore cross-window messaging issues
             }
-            setTimeout(() => {
-                try { window.close(); } catch (error) {}
-            }, 120);
+            Promise.resolve()
+                .then(() => notifyExtensionDirectly())
+                .catch(() => false)
+                .finally(() => {
+                    setTimeout(() => {
+                        try { window.close(); } catch (error) {}
+                    }, 220);
+                });
         })();
     </script>
 </body>
