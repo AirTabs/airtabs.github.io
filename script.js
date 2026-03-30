@@ -1303,6 +1303,60 @@
         return parsed;
     }
 
+    function cloneSerializable(value) {
+        if (!value || typeof value !== 'object') return null;
+        try {
+            return JSON.parse(JSON.stringify(value));
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function resolveStoredActiveSpaceId(spaces, options = {}) {
+        const safeSpaces = Array.isArray(spaces) ? spaces.filter(Boolean) : [];
+        if (!safeSpaces.length) return '';
+        const preferredId = String(options?.preferredId || '').trim();
+        if (preferredId && safeSpaces.some((space) => space?.id === preferredId)) return preferredId;
+        const fallbackId = String(options?.fallbackId || '').trim();
+        if (fallbackId && safeSpaces.some((space) => space?.id === fallbackId)) return fallbackId;
+        return safeSpaces[0]?.id || '';
+    }
+
+    function buildTransferDataSnapshot(options = {}) {
+        const snapshot = cloneSerializable(data) || buildDefaultData();
+        if (options?.includeActiveSpaceId === false && snapshot && typeof snapshot === 'object') {
+            delete snapshot.activeSpaceId;
+        }
+        return snapshot;
+    }
+
+    function storeIncomingData(rawData, options = {}) {
+        const snapshot = cloneSerializable(rawData);
+        if (!snapshot || typeof snapshot !== 'object' || !Array.isArray(snapshot.spaces)) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(buildDefaultData()));
+            return;
+        }
+        snapshot.version = DATA_VERSION;
+        snapshot.spaces = snapshot.spaces.filter(Boolean);
+        snapshot.activeSpaceId = resolveStoredActiveSpaceId(snapshot.spaces, {
+            preferredId: options?.preserveLocalActiveSpace ? data?.activeSpaceId : '',
+            fallbackId: options?.preserveLocalActiveSpace ? '' : snapshot.activeSpaceId
+        });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+    }
+
+    function storeIncomingSpaces(spaces, options = {}) {
+        const safeSpaces = cloneSerializable((Array.isArray(spaces) ? spaces : []).filter(Boolean)) || [];
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            version: DATA_VERSION,
+            spaces: safeSpaces,
+            activeSpaceId: resolveStoredActiveSpaceId(safeSpaces, {
+                preferredId: options?.preserveLocalActiveSpace ? data?.activeSpaceId : '',
+                fallbackId: options?.preserveLocalActiveSpace ? '' : options?.incomingActiveSpaceId
+            })
+        }));
+    }
+
     const SAVE_DATA_DEBOUNCE_MS = 64;
     let saveDataTimer = 0;
     let saveDataPending = false;
@@ -1335,6 +1389,10 @@
     function saveDataAndPushNow() {
         saveData({ immediate: true });
         scheduleAutoSyncPush(true);
+    }
+
+    function persistUiOnlyDataState() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     }
 
     function readJsonStorage(key, fallback = null) {
@@ -1714,7 +1772,7 @@
     async function buildBackupPayloadForSync() {
         const payload = {
             version: DATA_VERSION,
-            data: data,
+            data: buildTransferDataSnapshot({ includeActiveSpaceId: false }),
             engines: engines,
             activeEngine: activeEngineId,
             bgLight: getThemeBackground('light'),
@@ -1742,13 +1800,12 @@
         autoSyncSuppressPush = true;
         try {
             if (payload.data) {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(payload.data));
+                storeIncomingData(payload.data, { preserveLocalActiveSpace: true });
             } else if (payload.spaces) {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify({
-                    version: DATA_VERSION,
-                    spaces: payload.spaces,
-                    activeSpaceId: payload.activeSpaceId || payload.spaces[0]?.id
-                }));
+                storeIncomingSpaces(payload.spaces, {
+                    preserveLocalActiveSpace: true,
+                    incomingActiveSpaceId: payload.activeSpaceId
+                });
             } else if (payload.links) {
                 const migrated = buildDefaultData(payload.links);
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
@@ -3167,7 +3224,7 @@
             ? Math.sign(requestedDirection)
             : Math.sign(nextIndex - currentIndex);
         data.activeSpaceId = spaceId;
-        saveData();
+        persistUiOnlyDataState();
         playSpaceSwitchAnimation(direction);
         selectedIds.clear();
         selectionContext = { scope: 'space', folderId: null };

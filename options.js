@@ -279,6 +279,60 @@
         return parsed;
     }
 
+    function cloneSerializable(value) {
+        if (!value || typeof value !== 'object') return null;
+        try {
+            return JSON.parse(JSON.stringify(value));
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function resolveStoredActiveSpaceId(spaces, options = {}) {
+        const safeSpaces = Array.isArray(spaces) ? spaces.filter(Boolean) : [];
+        if (!safeSpaces.length) return '';
+        const preferredId = String(options?.preferredId || '').trim();
+        if (preferredId && safeSpaces.some((space) => space?.id === preferredId)) return preferredId;
+        const fallbackId = String(options?.fallbackId || '').trim();
+        if (fallbackId && safeSpaces.some((space) => space?.id === fallbackId)) return fallbackId;
+        return safeSpaces[0]?.id || '';
+    }
+
+    function buildTransferDataSnapshot(options = {}) {
+        const snapshot = cloneSerializable(data) || buildDefaultData();
+        if (options?.includeActiveSpaceId === false && snapshot && typeof snapshot === 'object') {
+            delete snapshot.activeSpaceId;
+        }
+        return snapshot;
+    }
+
+    function storeIncomingData(rawData, options = {}) {
+        const snapshot = cloneSerializable(rawData);
+        if (!snapshot || typeof snapshot !== 'object' || !Array.isArray(snapshot.spaces)) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(buildDefaultData()));
+            return;
+        }
+        snapshot.version = DATA_VERSION;
+        snapshot.spaces = snapshot.spaces.filter(Boolean);
+        snapshot.activeSpaceId = resolveStoredActiveSpaceId(snapshot.spaces, {
+            preferredId: options?.preserveLocalActiveSpace ? data?.activeSpaceId : '',
+            fallbackId: options?.preserveLocalActiveSpace ? '' : snapshot.activeSpaceId
+        });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+    }
+
+    function storeIncomingSpaces(spaces, options = {}) {
+        const safeSpaces = cloneSerializable((Array.isArray(spaces) ? spaces : []).filter(Boolean)) || [];
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            version: DATA_VERSION,
+            spaces: safeSpaces,
+            activeSpaceId: resolveStoredActiveSpaceId(safeSpaces, {
+                preferredId: options?.preserveLocalActiveSpace ? data?.activeSpaceId : '',
+                fallbackId: options?.preserveLocalActiveSpace ? '' : options?.incomingActiveSpaceId
+            })
+        }));
+    }
+
     function markLocalDataUpdated(timestamp = Date.now()) {
         const safeTs = Number.isFinite(timestamp) && timestamp > 0 ? Math.floor(timestamp) : Date.now();
         localStorage.setItem(SYNC_LAST_LOCAL_UPDATED_AT_KEY, String(safeTs));
@@ -1706,10 +1760,10 @@
         }
     }
 
-    async function buildBackupPayload() {
+    async function buildBackupPayload(options = {}) {
         const backup = {
             version: DATA_VERSION,
-            data: data,
+            data: buildTransferDataSnapshot({ includeActiveSpaceId: options?.includeActiveSpaceId !== false }),
             engines: engines,
             activeEngine: localStorage.getItem('myActiveEngine') || '',
             bgLight: getThemeBackground('light'),
@@ -1725,15 +1779,15 @@
         return backup;
     }
 
-    async function applyImportedBackup(imported) {
+    async function applyImportedBackup(imported, options = {}) {
+        const preserveLocalActiveSpace = options?.preserveLocalActiveSpace === true;
         if (imported?.data) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(imported.data));
+            storeIncomingData(imported.data, { preserveLocalActiveSpace });
         } else if (imported?.spaces) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({
-                version: DATA_VERSION,
-                spaces: imported.spaces,
-                activeSpaceId: imported.activeSpaceId || imported.spaces[0]?.id
-            }));
+            storeIncomingSpaces(imported.spaces, {
+                preserveLocalActiveSpace,
+                incomingActiveSpaceId: imported.activeSpaceId
+            });
         } else if (imported?.links) {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(buildDefaultData(imported.links)));
         } else {
@@ -1866,7 +1920,7 @@
         const handle = await getOrPickSyncFileHandle();
         const canWrite = await ensureFileHandlePermission(handle, 'readwrite');
         if (!canWrite) throw new Error(trKey('syncFileNoWriteAccess', 'Нет права на запись sync-файла'));
-        const payload = await buildBackupPayload();
+        const payload = await buildBackupPayload({ includeActiveSpaceId: false });
         const writable = await handle.createWritable();
         try {
             await writable.write(JSON.stringify(payload));
@@ -1888,7 +1942,7 @@
         const file = await handle.getFile();
         const text = await file.text();
         const imported = JSON.parse(String(text || '{}'));
-        await applyImportedBackup(imported);
+        await applyImportedBackup(imported, { preserveLocalActiveSpace: true });
         setSyncLocalMeta({
             fileName: handle.name || 'AirTab.sync.json',
             lastPullAt: Date.now()
@@ -1915,7 +1969,7 @@
         const interactive = options.interactive !== false;
         const accessToken = await getGoogleDriveAccessToken({ interactive });
         const fileName = getGoogleSyncFileName();
-        const payload = await buildBackupPayload();
+        const payload = await buildBackupPayload({ includeActiveSpaceId: false });
         await uploadGoogleDriveSyncFile(accessToken, fileName, JSON.stringify(payload));
         clearGoogleSyncError();
         setSyncGoogleMeta({
@@ -1931,7 +1985,7 @@
         const fileName = getGoogleSyncFileName();
         const text = await downloadGoogleDriveSyncFile(accessToken, fileName);
         const imported = JSON.parse(String(text || '{}'));
-        await applyImportedBackup(imported);
+        await applyImportedBackup(imported, { preserveLocalActiveSpace: true });
         clearGoogleSyncError();
         setSyncGoogleMeta({
             fileName,
