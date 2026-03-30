@@ -90,6 +90,11 @@
             };
             if (redirectFlow) {
                 try {
+                    localStorage.setItem(oauthResultStorageKey, JSON.stringify({ url: callbackUrl }));
+                } catch (error) {
+                    // best effort
+                }
+                try {
                     sessionStorage.setItem(oauthResultStorageKey, JSON.stringify({ url: callbackUrl }));
                 } catch (error) {
                     // best effort

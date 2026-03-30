@@ -949,26 +949,14 @@
     }
 
     function readSessionJson(key, fallback = null) {
-        try {
-            const raw = sessionStorage.getItem(key);
-            if (!raw) return fallback;
-            const parsed = JSON.parse(raw);
-            return parsed && typeof parsed === 'object' ? parsed : fallback;
-        } catch (error) {
-            return fallback;
-        }
+        const fromLocalStorage = readJsonStorage(key, undefined);
+        if (fromLocalStorage !== undefined) return fromLocalStorage;
+        return readSessionJsonStorage(key, fallback);
     }
 
     function writeSessionJson(key, value) {
-        try {
-            if (value === null || value === undefined) {
-                sessionStorage.removeItem(key);
-                return;
-            }
-            sessionStorage.setItem(key, JSON.stringify(value));
-        } catch (error) {
-            // best effort
-        }
+        writeJsonStorage(key, value);
+        writeSessionJsonStorage(key, value);
     }
 
     function getPendingDropboxOAuth() {
